@@ -21,7 +21,7 @@ public class AuthorServiceTests
     [Fact]
     public void Constructor_NullRepository_ThrowsArgumentNullException()
     {
-        // Arrange & Act & Assert
+        // Act & Assert
         Assert.Throws<ArgumentNullException>(() => new AuthorService(null!));
     }
 
@@ -29,20 +29,21 @@ public class AuthorServiceTests
     public async Task GetAllAsync_ReturnsAllAuthors()
     {
         // Arrange
-        var authors = new List<Author>
+        var expectedAuthors = new List<Author>
         {
             new Author { Id = 1, Name = "Author 1" },
             new Author { Id = 2, Name = "Author 2" }
         };
-        _mockRepository.Setup(r => r.GetAllAsync()).ReturnsAsync(authors);
+        _mockRepository.Setup(r => r.GetAllAsync())
+            .ReturnsAsync(expectedAuthors);
 
         // Act
         var result = await _service.GetAllAsync();
 
         // Assert
-        Assert.Equal(2, result.Count);
-        Assert.Equal("Author 1", result[0].Name);
-        Assert.Equal("Author 2", result[1].Name);
+        Assert.Equal(expectedAuthors.Count, result.Count);
+        Assert.Equal(expectedAuthors[0].Name, result[0].Name);
+        Assert.Equal(expectedAuthors[1].Name, result[1].Name);
         _mockRepository.Verify(r => r.GetAllAsync(), Times.Once);
     }
 
@@ -50,41 +51,46 @@ public class AuthorServiceTests
     public async Task GetByIdAsync_ExistingId_ReturnsAuthor()
     {
         // Arrange
-        var author = new Author { Id = 1, Name = "Author 1" };
-        _mockRepository.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(author);
+        const int authorId = 1;
+        var expectedAuthor = new Author { Id = authorId, Name = "Author 1" };
+        _mockRepository.Setup(r => r.GetByIdAsync(authorId))
+            .ReturnsAsync(expectedAuthor);
 
         // Act
-        var result = await _service.GetByIdAsync(1);
+        var result = await _service.GetByIdAsync(authorId);
 
         // Assert
         Assert.NotNull(result);
-        Assert.Equal(1, result.Id);
-        Assert.Equal("Author 1", result.Name);
-        _mockRepository.Verify(r => r.GetByIdAsync(1), Times.Once);
+        Assert.Equal(expectedAuthor.Id, result.Id);
+        Assert.Equal(expectedAuthor.Name, result.Name);
+        _mockRepository.Verify(r => r.GetByIdAsync(authorId), Times.Once);
     }
 
     [Fact]
     public async Task GetByIdAsync_NonExistingId_ThrowsNotFoundException()
     {
         // Arrange
-        _mockRepository.Setup(r => r.GetByIdAsync(99)).ReturnsAsync((Author)null!);
+        const int nonExistingId = 99;
+        _mockRepository.Setup(r => r.GetByIdAsync(nonExistingId))
+            .ReturnsAsync((Author)null!);
 
         // Act & Assert
-        await Assert.ThrowsAsync<NotFoundException>(() => _service.GetByIdAsync(99));
-        _mockRepository.Verify(r => r.GetByIdAsync(99), Times.Once);
+        await Assert.ThrowsAsync<NotFoundException>(() => _service.GetByIdAsync(nonExistingId));
+        _mockRepository.Verify(r => r.GetByIdAsync(nonExistingId), Times.Once);
     }
 
     [Fact]
     public async Task AddAsync_ValidAuthor_ReturnsId()
     {
         // Arrange
+        const int expectedId = 10;
         var dto = new AuthorCreateDto { Name = "New Author" };
         Author savedAuthor = null!;
 
         _mockRepository.Setup(r => r.AddAsync(It.IsAny<Author>()))
             .Callback<Author>(a =>
             {
-                a.Id = 10; 
+                a.Id = expectedId;
                 savedAuthor = a;
             })
             .Returns(Task.CompletedTask);
@@ -96,9 +102,9 @@ public class AuthorServiceTests
         var result = await _service.AddAsync(dto);
 
         // Assert
-        Assert.Equal(10, result);
+        Assert.Equal(expectedId, result);
         Assert.NotNull(savedAuthor);
-        Assert.Equal("New Author", savedAuthor.Name);
+        Assert.Equal(dto.Name, savedAuthor.Name);
         _mockRepository.Verify(r => r.AddAsync(It.IsAny<Author>()), Times.Once);
         _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Once);
     }
@@ -107,19 +113,23 @@ public class AuthorServiceTests
     public async Task UpdateAsync_ExistingAuthor_UpdatesAuthor()
     {
         // Arrange
-        var author = new Author { Id = 1, Name = "Original Name" };
+        const int authorId = 1;
+        var originalName = "Original Name";
+        var author = new Author { Id = authorId, Name = originalName };
         var dto = new AuthorUpdateDto { Name = "Updated Name" };
 
-        _mockRepository.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(author);
+        _mockRepository.Setup(r => r.GetByIdAsync(authorId))
+            .ReturnsAsync(author);
         _mockRepository.Setup(r => r.Update(It.IsAny<Author>()));
-        _mockRepository.Setup(r => r.SaveChangesAsync()).Returns(Task.CompletedTask);
+        _mockRepository.Setup(r => r.SaveChangesAsync())
+            .Returns(Task.CompletedTask);
 
         // Act
-        await _service.UpdateAsync(1, dto);
+        await _service.UpdateAsync(authorId, dto);
 
         // Assert
-        Assert.Equal("Updated Name", author.Name);
-        _mockRepository.Verify(r => r.GetByIdAsync(1), Times.Once);
+        Assert.Equal(dto.Name, author.Name);
+        _mockRepository.Verify(r => r.GetByIdAsync(authorId), Times.Once);
         _mockRepository.Verify(r => r.Update(author), Times.Once);
         _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Once);
     }
@@ -128,12 +138,14 @@ public class AuthorServiceTests
     public async Task UpdateAsync_NonExistingAuthor_ThrowsNotFoundException()
     {
         // Arrange
+        const int nonExistingId = 99;
         var dto = new AuthorUpdateDto { Name = "Updated Name" };
-        _mockRepository.Setup(r => r.GetByIdAsync(99)).ReturnsAsync((Author)null!);
+        _mockRepository.Setup(r => r.GetByIdAsync(nonExistingId))
+            .ReturnsAsync((Author)null!);
 
         // Act & Assert
-        await Assert.ThrowsAsync<NotFoundException>(() => _service.UpdateAsync(99, dto));
-        _mockRepository.Verify(r => r.GetByIdAsync(99), Times.Once);
+        await Assert.ThrowsAsync<NotFoundException>(() => _service.UpdateAsync(nonExistingId, dto));
+        _mockRepository.Verify(r => r.GetByIdAsync(nonExistingId), Times.Once);
         _mockRepository.Verify(r => r.Update(It.IsAny<Author>()), Times.Never);
         _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Never);
     }
@@ -142,16 +154,19 @@ public class AuthorServiceTests
     public async Task DeleteAsync_ExistingAuthor_DeletesAuthor()
     {
         // Arrange
-        var author = new Author { Id = 1, Name = "Author 1" };
-        _mockRepository.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(author);
+        const int authorId = 1;
+        var author = new Author { Id = authorId, Name = "Author 1" };
+        _mockRepository.Setup(r => r.GetByIdAsync(authorId))
+            .ReturnsAsync(author);
         _mockRepository.Setup(r => r.Delete(It.IsAny<Author>()));
-        _mockRepository.Setup(r => r.SaveChangesAsync()).Returns(Task.CompletedTask);
+        _mockRepository.Setup(r => r.SaveChangesAsync())
+            .Returns(Task.CompletedTask);
 
         // Act
-        await _service.DeleteAsync(1);
+        await _service.DeleteAsync(authorId);
 
         // Assert
-        _mockRepository.Verify(r => r.GetByIdAsync(1), Times.Once);
+        _mockRepository.Verify(r => r.GetByIdAsync(authorId), Times.Once);
         _mockRepository.Verify(r => r.Delete(author), Times.Once);
         _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Once);
     }
@@ -160,11 +175,13 @@ public class AuthorServiceTests
     public async Task DeleteAsync_NonExistingAuthor_ThrowsNotFoundException()
     {
         // Arrange
-        _mockRepository.Setup(r => r.GetByIdAsync(99)).ReturnsAsync((Author)null!);
+        const int nonExistingId = 99;
+        _mockRepository.Setup(r => r.GetByIdAsync(nonExistingId))
+            .ReturnsAsync((Author)null!);
 
         // Act & Assert
-        await Assert.ThrowsAsync<NotFoundException>(() => _service.DeleteAsync(99));
-        _mockRepository.Verify(r => r.GetByIdAsync(99), Times.Once);
+        await Assert.ThrowsAsync<NotFoundException>(() => _service.DeleteAsync(nonExistingId));
+        _mockRepository.Verify(r => r.GetByIdAsync(nonExistingId), Times.Once);
         _mockRepository.Verify(r => r.Delete(It.IsAny<Author>()), Times.Never);
         _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Never);
     }

@@ -22,7 +22,7 @@ public class BookServiceTests
     [Fact]
     public void Constructor_NullRepository_ThrowsArgumentNullException()
     {
-        // Arrange & Act & Assert
+        // Act & Assert
         Assert.Throws<ArgumentNullException>(() => new BookService(null!));
     }
 
@@ -32,7 +32,7 @@ public class BookServiceTests
         // Arrange
         var author = new Author { Id = 1, Name = "Author 1" };
         var genre = new Genre { Id = 1, Name = "Fiction" };
-        var books = new List<Book>
+        var expectedBooks = new List<Book>
         {
             new Book
             {
@@ -61,17 +61,18 @@ public class BookServiceTests
         _mockRepository.Setup(r => r.GetAllAsync(
             It.IsAny<Expression<Func<Book, object>>>(),
             It.IsAny<Expression<Func<Book, object>>>()))
-            .ReturnsAsync(books);
+            .ReturnsAsync(expectedBooks);
 
         // Act
         var result = await _service.GetAllAsync();
 
         // Assert
-        Assert.Equal(2, result.Count);
-        Assert.Equal("Book 1", result[0].Title);
-        Assert.Equal("Book 2", result[1].Title);
-        Assert.Equal("Author 1", result[0].AuthorName);
-        Assert.Equal("Fiction", result[0].GenreName);
+        Assert.Equal(expectedBooks.Count, result.Count);
+        Assert.Equal(expectedBooks[0].Title, result[0].Title);
+        Assert.Equal(expectedBooks[1].Title, result[1].Title);
+        Assert.Equal(author.Name, result[0].AuthorName);
+        Assert.Equal(genre.Name, result[0].GenreName);
+
         _mockRepository.Verify(r => r.GetAllAsync(
             It.IsAny<Expression<Func<Book, object>>>(),
             It.IsAny<Expression<Func<Book, object>>>()
@@ -82,11 +83,12 @@ public class BookServiceTests
     public async Task GetByIdAsync_ExistingId_ReturnsBook()
     {
         // Arrange
+        const int bookId = 1;
         var author = new Author { Id = 1, Name = "Author 1" };
         var genre = new Genre { Id = 1, Name = "Fiction" };
-        var book = new Book
+        var expectedBook = new Book
         {
-            Id = 1,
+            Id = bookId,
             Title = "Book 1",
             Author = author,
             Genre = genre,
@@ -97,23 +99,24 @@ public class BookServiceTests
         };
 
         _mockRepository.Setup(r => r.GetByIdAsync(
-            1,
+            bookId,
             It.IsAny<Expression<Func<Book, object>>>(),
             It.IsAny<Expression<Func<Book, object>>>()))
-            .ReturnsAsync(book);
+            .ReturnsAsync(expectedBook);
 
         // Act
-        var result = await _service.GetByIdAsync(1);
+        var result = await _service.GetByIdAsync(bookId);
 
         // Assert
         Assert.NotNull(result);
-        Assert.Equal(1, result.Id);
-        Assert.Equal("Book 1", result.Title);
-        Assert.Equal("Author 1", result.AuthorName);
-        Assert.Equal("Fiction", result.GenreName);
-        Assert.Equal(19.99m, result.Price);
+        Assert.Equal(expectedBook.Id, result.Id);
+        Assert.Equal(expectedBook.Title, result.Title);
+        Assert.Equal(author.Name, result.AuthorName);
+        Assert.Equal(genre.Name, result.GenreName);
+        Assert.Equal(expectedBook.Price, result.Price);
+
         _mockRepository.Verify(r => r.GetByIdAsync(
-            1,
+            bookId,
             It.IsAny<Expression<Func<Book, object>>>(),
             It.IsAny<Expression<Func<Book, object>>>()
         ), Times.Once);
@@ -123,16 +126,19 @@ public class BookServiceTests
     public async Task GetByIdAsync_NonExistingId_ThrowsNotFoundException()
     {
         // Arrange
+        const int nonExistingId = 99;
+
         _mockRepository.Setup(r => r.GetByIdAsync(
-            99,
+            nonExistingId,
             It.IsAny<Expression<Func<Book, object>>>(),
             It.IsAny<Expression<Func<Book, object>>>()))
             .ReturnsAsync((Book)null!);
 
         // Act & Assert
-        await Assert.ThrowsAsync<NotFoundException>(() => _service.GetByIdAsync(99));
+        await Assert.ThrowsAsync<NotFoundException>(() => _service.GetByIdAsync(nonExistingId));
+
         _mockRepository.Verify(r => r.GetByIdAsync(
-            99,
+            nonExistingId,
             It.IsAny<Expression<Func<Book, object>>>(),
             It.IsAny<Expression<Func<Book, object>>>()
         ), Times.Once);
@@ -142,9 +148,13 @@ public class BookServiceTests
     public async Task SearchAsync_WithCriteria_ReturnsMatchingBooks()
     {
         // Arrange
+        const string searchTitle = "Fantasy";
+        const string searchAuthor = "Author";
+        const string searchGenre = "Fiction";
+
         var author = new Author { Id = 1, Name = "Author 1" };
         var genre = new Genre { Id = 1, Name = "Fiction" };
-        var books = new List<Book>
+        var expectedBooks = new List<Book>
         {
             new Book
             {
@@ -163,14 +173,15 @@ public class BookServiceTests
             It.IsAny<Expression<Func<Book, bool>>>(),
             It.IsAny<Expression<Func<Book, object>>>(),
             It.IsAny<Expression<Func<Book, object>>>()))
-            .ReturnsAsync(books);
+            .ReturnsAsync(expectedBooks);
 
         // Act
-        var result = await _service.SearchAsync("Fantasy", "Author", "Fiction");
+        var result = await _service.SearchAsync(searchTitle, searchAuthor, searchGenre);
 
         // Assert
         Assert.Single(result);
-        Assert.Equal("Fantasy Novel", result[0].Title);
+        Assert.Equal(expectedBooks[0].Title, result[0].Title);
+
         _mockRepository.Verify(r => r.FindAsync(
             It.IsAny<Expression<Func<Book, bool>>>(),
             It.IsAny<Expression<Func<Book, object>>>(),
@@ -182,6 +193,7 @@ public class BookServiceTests
     public async Task AddAsync_ValidBook_ReturnsId()
     {
         // Arrange
+        const int expectedId = 10;
         var dto = new BookCreateDto
         {
             Title = "New Book",
@@ -196,7 +208,7 @@ public class BookServiceTests
         _mockRepository.Setup(r => r.AddAsync(It.IsAny<Book>()))
             .Callback<Book>(b =>
             {
-                b.Id = 10; // Simulate DB setting Id
+                b.Id = expectedId; // Simulate DB setting Id
                 savedBook = b;
             })
             .Returns(Task.CompletedTask);
@@ -208,13 +220,14 @@ public class BookServiceTests
         var result = await _service.AddAsync(dto);
 
         // Assert
-        Assert.Equal(10, result);
+        Assert.Equal(expectedId, result);
         Assert.NotNull(savedBook);
-        Assert.Equal("New Book", savedBook.Title);
-        Assert.Equal(1, savedBook.AuthorId);
-        Assert.Equal(1, savedBook.GenreId);
-        Assert.Equal(15.99m, savedBook.Price);
-        Assert.Equal(20, savedBook.QuantityAvailable);
+        Assert.Equal(dto.Title, savedBook.Title);
+        Assert.Equal(dto.AuthorId, savedBook.AuthorId);
+        Assert.Equal(dto.GenreId, savedBook.GenreId);
+        Assert.Equal(dto.Price, savedBook.Price);
+        Assert.Equal(dto.QuantityAvailable, savedBook.QuantityAvailable);
+
         _mockRepository.Verify(r => r.AddAsync(It.IsAny<Book>()), Times.Once);
         _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Once);
     }
@@ -223,9 +236,10 @@ public class BookServiceTests
     public async Task UpdateAsync_ExistingBook_UpdatesBook()
     {
         // Arrange
+        const int bookId = 1;
         var book = new Book
         {
-            Id = 1,
+            Id = bookId,
             Title = "Original Title",
             AuthorId = 1,
             GenreId = 1,
@@ -242,20 +256,21 @@ public class BookServiceTests
             QuantityAvailable = 10
         };
 
-        _mockRepository.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(book);
+        _mockRepository.Setup(r => r.GetByIdAsync(bookId)).ReturnsAsync(book);
         _mockRepository.Setup(r => r.Update(It.IsAny<Book>()));
         _mockRepository.Setup(r => r.SaveChangesAsync()).Returns(Task.CompletedTask);
 
         // Act
-        await _service.UpdateAsync(1, dto);
+        await _service.UpdateAsync(bookId, dto);
 
         // Assert
-        Assert.Equal("Updated Title", book.Title);
-        Assert.Equal(2, book.AuthorId);
-        Assert.Equal(2, book.GenreId);
-        Assert.Equal(12.99m, book.Price);
-        Assert.Equal(10, book.QuantityAvailable);
-        _mockRepository.Verify(r => r.GetByIdAsync(1), Times.Once);
+        Assert.Equal(dto.Title, book.Title);
+        Assert.Equal(dto.AuthorId, book.AuthorId);
+        Assert.Equal(dto.GenreId, book.GenreId);
+        Assert.Equal(dto.Price, book.Price);
+        Assert.Equal(dto.QuantityAvailable, book.QuantityAvailable);
+
+        _mockRepository.Verify(r => r.GetByIdAsync(bookId), Times.Once);
         _mockRepository.Verify(r => r.Update(book), Times.Once);
         _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Once);
     }
@@ -264,6 +279,7 @@ public class BookServiceTests
     public async Task UpdateAsync_NonExistingBook_ThrowsNotFoundException()
     {
         // Arrange
+        const int nonExistingId = 99;
         var dto = new BookUpdateDto
         {
             Title = "Updated Title",
@@ -273,11 +289,12 @@ public class BookServiceTests
             QuantityAvailable = 10
         };
 
-        _mockRepository.Setup(r => r.GetByIdAsync(99)).ReturnsAsync((Book)null!);
+        _mockRepository.Setup(r => r.GetByIdAsync(nonExistingId)).ReturnsAsync((Book)null!);
 
         // Act & Assert
-        await Assert.ThrowsAsync<NotFoundException>(() => _service.UpdateAsync(99, dto));
-        _mockRepository.Verify(r => r.GetByIdAsync(99), Times.Once);
+        await Assert.ThrowsAsync<NotFoundException>(() => _service.UpdateAsync(nonExistingId, dto));
+
+        _mockRepository.Verify(r => r.GetByIdAsync(nonExistingId), Times.Once);
         _mockRepository.Verify(r => r.Update(It.IsAny<Book>()), Times.Never);
         _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Never);
     }
@@ -286,16 +303,18 @@ public class BookServiceTests
     public async Task DeleteAsync_ExistingBook_DeletesBook()
     {
         // Arrange
-        var book = new Book { Id = 1, Title = "Book 1" };
-        _mockRepository.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(book);
+        const int bookId = 1;
+        var book = new Book { Id = bookId, Title = "Book 1" };
+
+        _mockRepository.Setup(r => r.GetByIdAsync(bookId)).ReturnsAsync(book);
         _mockRepository.Setup(r => r.Delete(It.IsAny<Book>()));
         _mockRepository.Setup(r => r.SaveChangesAsync()).Returns(Task.CompletedTask);
 
         // Act
-        await _service.DeleteAsync(1);
+        await _service.DeleteAsync(bookId);
 
         // Assert
-        _mockRepository.Verify(r => r.GetByIdAsync(1), Times.Once);
+        _mockRepository.Verify(r => r.GetByIdAsync(bookId), Times.Once);
         _mockRepository.Verify(r => r.Delete(book), Times.Once);
         _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Once);
     }
@@ -304,11 +323,14 @@ public class BookServiceTests
     public async Task DeleteAsync_NonExistingBook_ThrowsNotFoundException()
     {
         // Arrange
-        _mockRepository.Setup(r => r.GetByIdAsync(99)).ReturnsAsync((Book)null!);
+        const int nonExistingId = 99;
+
+        _mockRepository.Setup(r => r.GetByIdAsync(nonExistingId)).ReturnsAsync((Book)null!);
 
         // Act & Assert
-        await Assert.ThrowsAsync<NotFoundException>(() => _service.DeleteAsync(99));
-        _mockRepository.Verify(r => r.GetByIdAsync(99), Times.Once);
+        await Assert.ThrowsAsync<NotFoundException>(() => _service.DeleteAsync(nonExistingId));
+
+        _mockRepository.Verify(r => r.GetByIdAsync(nonExistingId), Times.Once);
         _mockRepository.Verify(r => r.Delete(It.IsAny<Book>()), Times.Never);
         _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Never);
     }
