@@ -1,6 +1,6 @@
 ﻿namespace OnlineBookstore.Dal.Entities;
 
-public class Genre
+public class Genre : IEntity
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
