@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using OnlineBookstore.Api.Startup;
 using OnlineBookstore.Bll.ServiceContracts;
 using OnlineBookstore.Bll.Services;
 using OnlineBookstore.Dal.Data;
@@ -14,6 +15,7 @@ builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 builder.Services.AddScoped<IBookService, BookService>();
 builder.Services.AddScoped<IAuthorService, AuthorService>();
 builder.Services.AddScoped<IGenreService, GenreService>();
+builder.Services.AddSingleton<DatabaseMigrator>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -26,8 +28,17 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+await ApplyMigrationsAsync(app);
+
 app.UseAuthorization();
 
 app.MapControllers();
 
 app.Run();
+
+static async Task ApplyMigrationsAsync(WebApplication app)
+{
+    var scope = app.Services.CreateScope();
+    var migrator = scope.ServiceProvider.GetRequiredService<DatabaseMigrator>();
+    await migrator.ApplyMigrationsAsync();
+}
