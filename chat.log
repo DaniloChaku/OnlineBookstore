@@ -1,0 +1,5142 @@
+Q: please Implement a RESTful API for a simple online bookstore using ASP.NET Core and EF. The API should allow users to perform CRUD operations on books, authors, and genres. Books should have a title, author, genre, price, and quantity available. Users should be able to search for books by title, author, or genre. Use EF to persist data to a relational database. There should be unit tests in place, coverage >80% 
+Start with drafting a plan and desinging the database.
+
+A: Alright — we'll start with a **clear plan** and a **database design** for your ASP.NET Core + EF Core **Online Bookstore API** project.
+
+---
+
+# 📋 Plan
+
+### 1. **Tech Stack**
+- **Backend**: ASP.NET Core 8 Web API
+- **ORM**: Entity Framework Core
+- **Database**: SQL Server (or SQLite for development/testing)
+- **Testing**: xUnit + Moq + InMemory Database for Unit Testing
+
+---
+
+### 2. **Main Features**
+- **Books CRUD**: Create, Read, Update, Delete Books
+- **Authors CRUD**: Manage Authors
+- **Genres CRUD**: Manage Genres
+- **Search**: Find books by title, author, or genre
+- **Validation**: Ensure data integrity (e.g., no negative prices)
+- **Unit Tests**: Target Controllers, Services, and Repositories
+- **Code Coverage**: Target 80%+
+
+---
+
+### 3. **High-Level Architecture**
+- **Controllers**: Handle HTTP Requests
+- **Services**: Business Logic
+- **Repositories**: Data Access (EF Core)
+- **DTOs**: Separate Entity and API Models
+- **AutoMapper**: For mapping Entities ↔️ DTOs
+- **EF Core**: Database Persistence
+- **Swagger**: API Documentation (for easy testing)
+
+---
+
+# 🧩 Database Design
+
+We need 3 core tables: **Books**, **Authors**, **Genres**.
+
+### 📚 Entities:
+
+---
+
+### 1. **Author**
+| Field      | Type         | Constraints       |
+|------------|--------------|-------------------|
+| Id         | int          | PK, Identity       |
+| Name       | string       | Required, Max 255  |
+
+---
+
+### 2. **Genre**
+| Field      | Type         | Constraints       |
+|------------|--------------|-------------------|
+| Id         | int          | PK, Identity       |
+| Name       | string       | Required, Max 100  |
+
+---
+
+### 3. **Book**
+| Field             | Type         | Constraints                   |
+|-------------------|--------------|-------------------------------|
+| Id                | int          | PK, Identity                  |
+| Title             | string       | Required, Max 255             |
+| AuthorId          | int          | FK → Authors(Id), Required    |
+| GenreId           | int          | FK → Genres(Id), Required     |
+| Price             | decimal(18,2)| Required, > 0                 |
+| QuantityAvailable | int          | Required, >= 0                |
+
+**Relationships**:
+- **One-to-Many**: Author → Books
+- **One-to-Many**: Genre → Books
+
+---
+
+### 🗺️ ER Diagram (Simplified)
+
+```
+Author (1) ----- (M) Book (M) ----- (1) Genre
+```
+
+---
+
+# 🏗️ Next Steps
+
+1. **Set Up ASP.NET Core Web API Project**
+2. **Create Entities and DbContext**
+3. **Create Repositories and Services**
+4. **Create Controllers (with DTOs)**
+5. **Configure AutoMapper**
+6. **Add Search Functionality**
+7. **Add Swagger**
+8. **Create Unit Tests for Each Layer**
+9. **Check Test Coverage**
+
+---
+
+Would you like me to move to **Step 1** and show you the **solution structure** and **starting code** next? 🚀  
+(we can also decide if you want authentication or keep it fully open for now!)
+
+Q: do Step 2 and 3 at once
+
+A: Perfect — let's move quickly and smartly.  
+I'll do **Step 2 and 3** together: **Entities, DbContext, Repositories, and Services**.
+
+---
+
+# 🛠️ Step 2 — Entities and DbContext
+
+✅ **Create Entities**  
+✅ **Create ApplicationDbContext**
+
+---
+
+### 1. **Entities**
+
+```csharp
+// Models/Author.cs
+namespace BookstoreAPI.Models
+{
+    public class Author
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+
+        // Navigation property
+        public ICollection<Book> Books { get; set; } = new List<Book>();
+    }
+}
+```
+
+```csharp
+// Models/Genre.cs
+namespace BookstoreAPI.Models
+{
+    public class Genre
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+
+        // Navigation property
+        public ICollection<Book> Books { get; set; } = new List<Book>();
+    }
+}
+```
+
+```csharp
+// Models/Book.cs
+namespace BookstoreAPI.Models
+{
+    public class Book
+    {
+        public int Id { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public int AuthorId { get; set; }
+        public Author Author { get; set; } = null!;
+        public int GenreId { get; set; }
+        public Genre Genre { get; set; } = null!;
+        public decimal Price { get; set; }
+        public int QuantityAvailable { get; set; }
+    }
+}
+```
+
+---
+
+### 2. **DbContext**
+
+```csharp
+// Data/ApplicationDbContext.cs
+using Microsoft.EntityFrameworkCore;
+using BookstoreAPI.Models;
+
+namespace BookstoreAPI.Data
+{
+    public class ApplicationDbContext : DbContext
+    {
+        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+            : base(options)
+        {
+        }
+
+        public DbSet<Author> Authors => Set<Author>();
+        public DbSet<Genre> Genres => Set<Genre>();
+        public DbSet<Book> Books => Set<Book>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+
+            modelBuilder.Entity<Author>()
+                .Property(a => a.Name)
+                .IsRequired()
+                .HasMaxLength(255);
+
+            modelBuilder.Entity<Genre>()
+                .Property(g => g.Name)
+                .IsRequired()
+                .HasMaxLength(100);
+
+            modelBuilder.Entity<Book>()
+                .Property(b => b.Title)
+                .IsRequired()
+                .HasMaxLength(255);
+
+            modelBuilder.Entity<Book>()
+                .Property(b => b.Price)
+                .HasPrecision(18, 2);
+
+            modelBuilder.Entity<Book>()
+                .HasOne(b => b.Author)
+                .WithMany(a => a.Books)
+                .HasForeignKey(b => b.AuthorId);
+
+            modelBuilder.Entity<Book>()
+                .HasOne(b => b.Genre)
+                .WithMany(g => g.Books)
+                .HasForeignKey(b => b.GenreId);
+        }
+    }
+}
+```
+
+---
+
+# 🏛️ Step 3 — Repositories and Services
+
+✅ **Create Interfaces**  
+✅ **Implement Repository Classes**  
+✅ **Implement Service Classes**
+
+---
+
+### 1. **Repository Interfaces**
+
+```csharp
+// Repositories/IRepository.cs
+using System.Linq.Expressions;
+
+namespace BookstoreAPI.Repositories
+{
+    public interface IRepository<T> where T : class
+    {
+        Task<IEnumerable<T>> GetAllAsync();
+        Task<T?> GetByIdAsync(int id);
+        Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate);
+        Task AddAsync(T entity);
+        void Update(T entity);
+        void Delete(T entity);
+        Task SaveChangesAsync();
+    }
+}
+```
+
+---
+
+### 2. **Generic Repository**
+
+```csharp
+// Repositories/Repository.cs
+using Microsoft.EntityFrameworkCore;
+using System.Linq.Expressions;
+using BookstoreAPI.Data;
+
+namespace BookstoreAPI.Repositories
+{
+    public class Repository<T> : IRepository<T> where T : class
+    {
+        private readonly ApplicationDbContext _context;
+        private readonly DbSet<T> _dbSet;
+
+        public Repository(ApplicationDbContext context)
+        {
+            _context = context;
+            _dbSet = context.Set<T>();
+        }
+
+        public async Task<IEnumerable<T>> GetAllAsync()
+            => await _dbSet.ToListAsync();
+
+        public async Task<T?> GetByIdAsync(int id)
+            => await _dbSet.FindAsync(id);
+
+        public async Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate)
+            => await _dbSet.Where(predicate).ToListAsync();
+
+        public async Task AddAsync(T entity)
+            => await _dbSet.AddAsync(entity);
+
+        public void Update(T entity)
+            => _dbSet.Update(entity);
+
+        public void Delete(T entity)
+            => _dbSet.Remove(entity);
+
+        public async Task SaveChangesAsync()
+            => await _context.SaveChangesAsync();
+    }
+}
+```
+
+---
+
+### 3. **Specific Services**
+
+Each service will call the generic repository.
+
+```csharp
+// Services/IBookService.cs
+using BookstoreAPI.Models;
+
+namespace BookstoreAPI.Services
+{
+    public interface IBookService
+    {
+        Task<IEnumerable<Book>> GetAllAsync();
+        Task<Book?> GetByIdAsync(int id);
+        Task<IEnumerable<Book>> SearchAsync(string? title, string? author, string? genre);
+        Task AddAsync(Book book);
+        Task UpdateAsync(Book book);
+        Task DeleteAsync(int id);
+    }
+}
+```
+
+```csharp
+// Services/BookService.cs
+using BookstoreAPI.Models;
+using BookstoreAPI.Repositories;
+using Microsoft.EntityFrameworkCore;
+
+namespace BookstoreAPI.Services
+{
+    public class BookService : IBookService
+    {
+        private readonly IRepository<Book> _bookRepository;
+
+        public BookService(IRepository<Book> bookRepository)
+        {
+            _bookRepository = bookRepository;
+        }
+
+        public async Task<IEnumerable<Book>> GetAllAsync()
+            => await _bookRepository.GetAllAsync();
+
+        public async Task<Book?> GetByIdAsync(int id)
+            => await _bookRepository.GetByIdAsync(id);
+
+        public async Task<IEnumerable<Book>> SearchAsync(string? title, string? author, string? genre)
+        {
+            return await _bookRepository.FindAsync(b =>
+                (string.IsNullOrEmpty(title) || b.Title.Contains(title)) &&
+                (string.IsNullOrEmpty(author) || b.Author.Name.Contains(author)) &&
+                (string.IsNullOrEmpty(genre) || b.Genre.Name.Contains(genre))
+            );
+        }
+
+        public async Task AddAsync(Book book)
+        {
+            await _bookRepository.AddAsync(book);
+            await _bookRepository.SaveChangesAsync();
+        }
+
+        public async Task UpdateAsync(Book book)
+        {
+            _bookRepository.Update(book);
+            await _bookRepository.SaveChangesAsync();
+        }
+
+        public async Task DeleteAsync(int id)
+        {
+            var book = await _bookRepository.GetByIdAsync(id);
+            if (book != null)
+            {
+                _bookRepository.Delete(book);
+                await _bookRepository.SaveChangesAsync();
+            }
+        }
+    }
+}
+```
+
+---
+
+📌 Similarly, you can create:
+- **IAuthorService / AuthorService**
+- **IGenreService / GenreService**
+
+They would be much simpler (no search), just CRUD.
+
+---
+
+# 🎯 Conclusion of Step 2 & 3
+
+✅ Entities  
+✅ ApplicationDbContext  
+✅ Generic Repository Pattern  
+✅ Services  
+
+---
+
+# 🏗️ Next Natural Step:
+
+- Step 4: **Create Controllers and DTOs**  
+(so you have clean input/output)
+
+Would you like me to move forward and show you the **Book, Author, Genre Controllers and DTOs** next? 🚀  
+Or would you like a full solution structure first? 📁✨
+
+
+Q: let's put entity configurations into separate classes. add configurations for Ids.
+also, let's make services accept DTOs instead of entity classes. use manual mapping
+
+A: Excellent — this will **greatly improve code organization** and **separate concerns** clearly, just like in production-grade projects.  
+Here’s exactly what we'll do based on your instructions:
+
+---
+
+# 🛠 Updated Plan:
+
+### 1. **EntityTypeConfigurations**:
+- Move entity configurations (for `Author`, `Genre`, `Book`) into **separate classes** under `/Configurations`.
+- Explicitly configure:
+  - Id as **primary key**.
+  - Other property constraints (e.g., max lengths, required fields).
+
+---
+
+### 2. **Service Layer** changes:
+- Accept **DTOs** (not Entity models).
+- Do **manual mapping** inside Services — _no AutoMapper_.
+
+Example:
+```csharp
+public async Task AddAsync(BookCreateDto dto)
+{
+    var book = new Book
+    {
+        Title = dto.Title,
+        AuthorId = dto.AuthorId,
+        GenreId = dto.GenreId,
+        Price = dto.Price,
+        QuantityAvailable = dto.QuantityAvailable
+    };
+
+    await _repository.AddAsync(book);
+    await _repository.SaveChangesAsync();
+}
+```
+
+---
+
+# ✨ Let's Implement It
+
+## 1. EntityTypeConfiguration classes
+
+**Folder**: `/Configurations`
+
+```csharp
+// Configurations/AuthorConfiguration.cs
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using BookstoreAPI.Models;
+
+namespace BookstoreAPI.Configurations
+{
+    public class AuthorConfiguration : IEntityTypeConfiguration<Author>
+    {
+        public void Configure(EntityTypeBuilder<Author> builder)
+        {
+            builder.HasKey(a => a.Id);
+
+            builder.Property(a => a.Name)
+                .IsRequired()
+                .HasMaxLength(255);
+        }
+    }
+}
+```
+
+```csharp
+// Configurations/GenreConfiguration.cs
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using BookstoreAPI.Models;
+
+namespace BookstoreAPI.Configurations
+{
+    public class GenreConfiguration : IEntityTypeConfiguration<Genre>
+    {
+        public void Configure(EntityTypeBuilder<Genre> builder)
+        {
+            builder.HasKey(g => g.Id);
+
+            builder.Property(g => g.Name)
+                .IsRequired()
+                .HasMaxLength(100);
+        }
+    }
+}
+```
+
+```csharp
+// Configurations/BookConfiguration.cs
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using BookstoreAPI.Models;
+
+namespace BookstoreAPI.Configurations
+{
+    public class BookConfiguration : IEntityTypeConfiguration<Book>
+    {
+        public void Configure(EntityTypeBuilder<Book> builder)
+        {
+            builder.HasKey(b => b.Id);
+
+            builder.Property(b => b.Title)
+                .IsRequired()
+                .HasMaxLength(255);
+
+            builder.Property(b => b.Price)
+                .HasPrecision(18, 2);
+
+            builder.HasOne(b => b.Author)
+                .WithMany(a => a.Books)
+                .HasForeignKey(b => b.AuthorId);
+
+            builder.HasOne(b => b.Genre)
+                .WithMany(g => g.Books)
+                .HasForeignKey(b => b.GenreId);
+        }
+    }
+}
+```
+
+---
+
+**Update DbContext:**
+
+```csharp
+// Data/ApplicationDbContext.cs
+using Microsoft.EntityFrameworkCore;
+using BookstoreAPI.Models;
+using BookstoreAPI.Configurations;
+
+namespace BookstoreAPI.Data
+{
+    public class ApplicationDbContext : DbContext
+    {
+        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+            : base(options)
+        {
+        }
+
+        public DbSet<Author> Authors => Set<Author>();
+        public DbSet<Genre> Genres => Set<Genre>();
+        public DbSet<Book> Books => Set<Book>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.ApplyConfiguration(new AuthorConfiguration());
+            modelBuilder.ApplyConfiguration(new GenreConfiguration());
+            modelBuilder.ApplyConfiguration(new BookConfiguration());
+
+            base.OnModelCreating(modelBuilder);
+        }
+    }
+}
+```
+
+---
+
+# 📚 2. Define DTOs
+
+**Folder**: `/DTOs`
+
+```csharp
+// DTOs/BookCreateDto.cs
+namespace BookstoreAPI.DTOs
+{
+    public class BookCreateDto
+    {
+        public string Title { get; set; } = string.Empty;
+        public int AuthorId { get; set; }
+        public int GenreId { get; set; }
+        public decimal Price { get; set; }
+        public int QuantityAvailable { get; set; }
+    }
+}
+```
+
+```csharp
+// DTOs/BookUpdateDto.cs
+namespace BookstoreAPI.DTOs
+{
+    public class BookUpdateDto
+    {
+        public string Title { get; set; } = string.Empty;
+        public int AuthorId { get; set; }
+        public int GenreId { get; set; }
+        public decimal Price { get; set; }
+        public int QuantityAvailable { get; set; }
+    }
+}
+```
+
+```csharp
+// DTOs/BookDto.cs
+namespace BookstoreAPI.DTOs
+{
+    public class BookDto
+    {
+        public int Id { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string AuthorName { get; set; } = string.Empty;
+        public string GenreName { get; set; } = string.Empty;
+        public decimal Price { get; set; }
+        public int QuantityAvailable { get; set; }
+    }
+}
+```
+
+(We will similarly create DTOs for `Author` and `Genre`.)
+
+---
+
+# 🛠 3. Update BookService to accept DTOs and do manual mapping
+
+```csharp
+// Services/IBookService.cs
+using BookstoreAPI.DTOs;
+
+namespace BookstoreAPI.Services
+{
+    public interface IBookService
+    {
+        Task<IEnumerable<BookDto>> GetAllAsync();
+        Task<BookDto?> GetByIdAsync(int id);
+        Task<IEnumerable<BookDto>> SearchAsync(string? title, string? author, string? genre);
+        Task AddAsync(BookCreateDto bookDto);
+        Task UpdateAsync(int id, BookUpdateDto bookDto);
+        Task DeleteAsync(int id);
+    }
+}
+```
+
+```csharp
+// Services/BookService.cs
+using BookstoreAPI.DTOs;
+using BookstoreAPI.Models;
+using BookstoreAPI.Repositories;
+using Microsoft.EntityFrameworkCore;
+
+namespace BookstoreAPI.Services
+{
+    public class BookService : IBookService
+    {
+        private readonly IRepository<Book> _bookRepository;
+
+        public BookService(IRepository<Book> bookRepository)
+        {
+            _bookRepository = bookRepository;
+        }
+
+        public async Task<IEnumerable<BookDto>> GetAllAsync()
+        {
+            var books = await _bookRepository.GetAllAsync();
+            return books.Select(MapToDto);
+        }
+
+        public async Task<BookDto?> GetByIdAsync(int id)
+        {
+            var book = await _bookRepository.GetByIdAsync(id);
+            return book == null ? null : MapToDto(book);
+        }
+
+        public async Task<IEnumerable<BookDto>> SearchAsync(string? title, string? author, string? genre)
+        {
+            var books = await _bookRepository.FindAsync(b =>
+                (string.IsNullOrEmpty(title) || b.Title.Contains(title)) &&
+                (string.IsNullOrEmpty(author) || b.Author.Name.Contains(author)) &&
+                (string.IsNullOrEmpty(genre) || b.Genre.Name.Contains(genre))
+            );
+            return books.Select(MapToDto);
+        }
+
+        public async Task AddAsync(BookCreateDto bookDto)
+        {
+            var book = new Book
+            {
+                Title = bookDto.Title,
+                AuthorId = bookDto.AuthorId,
+                GenreId = bookDto.GenreId,
+                Price = bookDto.Price,
+                QuantityAvailable = bookDto.QuantityAvailable
+            };
+
+            await _bookRepository.AddAsync(book);
+            await _bookRepository.SaveChangesAsync();
+        }
+
+        public async Task UpdateAsync(int id, BookUpdateDto bookDto)
+        {
+            var existing = await _bookRepository.GetByIdAsync(id);
+            if (existing == null) return;
+
+            existing.Title = bookDto.Title;
+            existing.AuthorId = bookDto.AuthorId;
+            existing.GenreId = bookDto.GenreId;
+            existing.Price = bookDto.Price;
+            existing.QuantityAvailable = bookDto.QuantityAvailable;
+
+            _bookRepository.Update(existing);
+            await _bookRepository.SaveChangesAsync();
+        }
+
+        public async Task DeleteAsync(int id)
+        {
+            var book = await _bookRepository.GetByIdAsync(id);
+            if (book != null)
+            {
+                _bookRepository.Delete(book);
+                await _bookRepository.SaveChangesAsync();
+            }
+        }
+
+        private static BookDto MapToDto(Book book)
+        {
+            return new BookDto
+            {
+                Id = book.Id,
+                Title = book.Title,
+                AuthorName = book.Author?.Name ?? string.Empty,
+                GenreName = book.Genre?.Name ?? string.Empty,
+                Price = book.Price,
+                QuantityAvailable = book.QuantityAvailable
+            };
+        }
+    }
+}
+```
+
+---
+
+# 📋 Summary
+
+✅ Entity Configuration Classes  
+✅ Configured IDs manually  
+✅ Services now accept **DTOs** (manual mapping)  
+✅ Much **cleaner separation** between DB and API layers
+
+---
+
+# ✅ Next Possible Steps
+- Set up **Controllers** that interact only with DTOs.
+- Implement **Authors** and **Genres** in the same style.
+- Add **Validation Attributes** (e.g., [Required], [Range]) to DTOs.
+- Add **Unit Tests** for Services.
+
+---
+
+👉 Would you like me to **continue to Controllers** next, or **show a unit test example** (for BookService)?  
+(You can pick!) 🚀
+
+
+Q: thanks. add crud services for authors and categories. also, add validation attributes to dtos
+
+A: Perfect — you're building this exactly like a real-world professional API should be built.  
+Let's continue cleanly:
+
+---
+
+# 🛠 Tasks to Do:
+
+✅ Add CRUD Services for **Authors** and **Genres**.  
+✅ Add **Validation Attributes** to all DTOs.
+
+---
+
+# 📚 1. Create DTOs for Author and Genre (with Validation)
+
+```csharp
+// DTOs/AuthorCreateDto.cs
+using System.ComponentModel.DataAnnotations;
+
+namespace BookstoreAPI.DTOs
+{
+    public class AuthorCreateDto
+    {
+        [Required]
+        [StringLength(255)]
+        public string Name { get; set; } = string.Empty;
+    }
+}
+```
+
+```csharp
+// DTOs/AuthorUpdateDto.cs
+using System.ComponentModel.DataAnnotations;
+
+namespace BookstoreAPI.DTOs
+{
+    public class AuthorUpdateDto
+    {
+        [Required]
+        [StringLength(255)]
+        public string Name { get; set; } = string.Empty;
+    }
+}
+```
+
+```csharp
+// DTOs/AuthorDto.cs
+namespace BookstoreAPI.DTOs
+{
+    public class AuthorDto
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+    }
+}
+```
+
+---
+
+```csharp
+// DTOs/GenreCreateDto.cs
+using System.ComponentModel.DataAnnotations;
+
+namespace BookstoreAPI.DTOs
+{
+    public class GenreCreateDto
+    {
+        [Required]
+        [StringLength(100)]
+        public string Name { get; set; } = string.Empty;
+    }
+}
+```
+
+```csharp
+// DTOs/GenreUpdateDto.cs
+using System.ComponentModel.DataAnnotations;
+
+namespace BookstoreAPI.DTOs
+{
+    public class GenreUpdateDto
+    {
+        [Required]
+        [StringLength(100)]
+        public string Name { get; set; } = string.Empty;
+    }
+}
+```
+
+```csharp
+// DTOs/GenreDto.cs
+namespace BookstoreAPI.DTOs
+{
+    public class GenreDto
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+    }
+}
+```
+
+---
+
+# 🏗 2. Author Service
+
+```csharp
+// Services/IAuthorService.cs
+using BookstoreAPI.DTOs;
+
+namespace BookstoreAPI.Services
+{
+    public interface IAuthorService
+    {
+        Task<IEnumerable<AuthorDto>> GetAllAsync();
+        Task<AuthorDto?> GetByIdAsync(int id);
+        Task AddAsync(AuthorCreateDto dto);
+        Task UpdateAsync(int id, AuthorUpdateDto dto);
+        Task DeleteAsync(int id);
+    }
+}
+```
+
+```csharp
+// Services/AuthorService.cs
+using BookstoreAPI.DTOs;
+using BookstoreAPI.Models;
+using BookstoreAPI.Repositories;
+
+namespace BookstoreAPI.Services
+{
+    public class AuthorService : IAuthorService
+    {
+        private readonly IRepository<Author> _authorRepository;
+
+        public AuthorService(IRepository<Author> authorRepository)
+        {
+            _authorRepository = authorRepository;
+        }
+
+        public async Task<IEnumerable<AuthorDto>> GetAllAsync()
+        {
+            var authors = await _authorRepository.GetAllAsync();
+            return authors.Select(a => new AuthorDto { Id = a.Id, Name = a.Name });
+        }
+
+        public async Task<AuthorDto?> GetByIdAsync(int id)
+        {
+            var author = await _authorRepository.GetByIdAsync(id);
+            return author == null ? null : new AuthorDto { Id = author.Id, Name = author.Name };
+        }
+
+        public async Task AddAsync(AuthorCreateDto dto)
+        {
+            var author = new Author { Name = dto.Name };
+            await _authorRepository.AddAsync(author);
+            await _authorRepository.SaveChangesAsync();
+        }
+
+        public async Task UpdateAsync(int id, AuthorUpdateDto dto)
+        {
+            var author = await _authorRepository.GetByIdAsync(id);
+            if (author == null) return;
+
+            author.Name = dto.Name;
+            _authorRepository.Update(author);
+            await _authorRepository.SaveChangesAsync();
+        }
+
+        public async Task DeleteAsync(int id)
+        {
+            var author = await _authorRepository.GetByIdAsync(id);
+            if (author != null)
+            {
+                _authorRepository.Delete(author);
+                await _authorRepository.SaveChangesAsync();
+            }
+        }
+    }
+}
+```
+
+---
+
+# 🏗 3. Genre Service
+
+```csharp
+// Services/IGenreService.cs
+using BookstoreAPI.DTOs;
+
+namespace BookstoreAPI.Services
+{
+    public interface IGenreService
+    {
+        Task<IEnumerable<GenreDto>> GetAllAsync();
+        Task<GenreDto?> GetByIdAsync(int id);
+        Task AddAsync(GenreCreateDto dto);
+        Task UpdateAsync(int id, GenreUpdateDto dto);
+        Task DeleteAsync(int id);
+    }
+}
+```
+
+```csharp
+// Services/GenreService.cs
+using BookstoreAPI.DTOs;
+using BookstoreAPI.Models;
+using BookstoreAPI.Repositories;
+
+namespace BookstoreAPI.Services
+{
+    public class GenreService : IGenreService
+    {
+        private readonly IRepository<Genre> _genreRepository;
+
+        public GenreService(IRepository<Genre> genreRepository)
+        {
+            _genreRepository = genreRepository;
+        }
+
+        public async Task<IEnumerable<GenreDto>> GetAllAsync()
+        {
+            var genres = await _genreRepository.GetAllAsync();
+            return genres.Select(g => new GenreDto { Id = g.Id, Name = g.Name });
+        }
+
+        public async Task<GenreDto?> GetByIdAsync(int id)
+        {
+            var genre = await _genreRepository.GetByIdAsync(id);
+            return genre == null ? null : new GenreDto { Id = genre.Id, Name = genre.Name };
+        }
+
+        public async Task AddAsync(GenreCreateDto dto)
+        {
+            var genre = new Genre { Name = dto.Name };
+            await _genreRepository.AddAsync(genre);
+            await _genreRepository.SaveChangesAsync();
+        }
+
+        public async Task UpdateAsync(int id, GenreUpdateDto dto)
+        {
+            var genre = await _genreRepository.GetByIdAsync(id);
+            if (genre == null) return;
+
+            genre.Name = dto.Name;
+            _genreRepository.Update(genre);
+            await _genreRepository.SaveChangesAsync();
+        }
+
+        public async Task DeleteAsync(int id)
+        {
+            var genre = await _genreRepository.GetByIdAsync(id);
+            if (genre != null)
+            {
+                _genreRepository.Delete(genre);
+                await _genreRepository.SaveChangesAsync();
+            }
+        }
+    }
+}
+```
+
+---
+
+# ✅ Summary of what we did now:
+
+| Feature                               | Status    |
+| :------------------------------------ | :-------- |
+| Author Services (CRUD with DTOs)      | ✅ Done    |
+| Genre Services (CRUD with DTOs)        | ✅ Done    |
+| Validation Attributes on DTOs         | ✅ Done    |
+
+---
+
+# 📌 Quick Observations
+
+- You now have **clean DTOs** separated from **Entity Models**.
+- Validation is done **automatically** at Controller level using `[ApiController]` and `[FromBody]`.
+- All services **only work with DTOs**, no entities leaking outside.
+- Manual Mapping = **explicit control**, better for small-to-medium apps.
+
+---
+
+# 🚀 Next Logical Steps
+
+1. **Create Controllers** (BookController, AuthorController, GenreController).
+2. **Add Fluent Validation** (optional, for more advanced validations).
+3. **Add Unit Tests** (Moq + xUnit) — since you want >80% coverage.
+
+---
+
+Would you like me to move ahead with building **Controllers** next? 🚀  
+(They're very quick now that services are clean!)  
+Or jump directly to **Unit Test Setup**? 🎯  
+You decide! 👇🏻
+
+
+Q: let's create constatns for max length etc and use them in attributes and configurations. also, add attributes to book dtos
+
+A: Very good — you're asking for a **professional-level** improvement.  
+Consistency with constants avoids **magic numbers** and makes the project easier to **maintain** and **update** later.
+
+---
+
+# 🛠 What we'll do now:
+
+✅ Create a static `ValidationConstants` class (for MaxLength, Price ranges, etc).  
+✅ Update **Attributes** on DTOs to use those constants.  
+✅ Update **Entity Configurations** to use those constants.  
+✅ Add **Validation Attributes** to **Book DTOs** (Create, Update).
+
+---
+
+# ✍ 1. ValidationConstants.cs
+
+**Create folder `/Constants` if you want to be extra clean.**
+
+```csharp
+// Constants/ValidationConstants.cs
+namespace BookstoreAPI.Constants
+{
+    public static class ValidationConstants
+    {
+        public const int AuthorNameMaxLength = 255;
+        public const int GenreNameMaxLength = 100;
+        public const int BookTitleMaxLength = 255;
+
+        public const decimal BookPriceMin = 0.01m;
+        public const decimal BookPriceMax = 10000m;
+
+        public const int BookQuantityMin = 0;
+        public const int BookQuantityMax = 10000;
+    }
+}
+```
+
+---
+
+# 🛠 2. Update DTOs
+
+## 📚 Author DTOs
+
+```csharp
+// DTOs/AuthorCreateDto.cs
+using System.ComponentModel.DataAnnotations;
+using BookstoreAPI.Constants;
+
+namespace BookstoreAPI.DTOs
+{
+    public class AuthorCreateDto
+    {
+        [Required]
+        [StringLength(ValidationConstants.AuthorNameMaxLength)]
+        public string Name { get; set; } = string.Empty;
+    }
+}
+```
+
+Similarly update `AuthorUpdateDto`.
+
+---
+
+## 📚 Genre DTOs
+
+```csharp
+// DTOs/GenreCreateDto.cs
+using System.ComponentModel.DataAnnotations;
+using BookstoreAPI.Constants;
+
+namespace BookstoreAPI.DTOs
+{
+    public class GenreCreateDto
+    {
+        [Required]
+        [StringLength(ValidationConstants.GenreNameMaxLength)]
+        public string Name { get; set; } = string.Empty;
+    }
+}
+```
+
+Similarly update `GenreUpdateDto`.
+
+---
+
+## 📚 Book DTOs
+
+```csharp
+// DTOs/BookCreateDto.cs
+using System.ComponentModel.DataAnnotations;
+using BookstoreAPI.Constants;
+
+namespace BookstoreAPI.DTOs
+{
+    public class BookCreateDto
+    {
+        [Required]
+        [StringLength(ValidationConstants.BookTitleMaxLength)]
+        public string Title { get; set; } = string.Empty;
+
+        [Required]
+        public int AuthorId { get; set; }
+
+        [Required]
+        public int GenreId { get; set; }
+
+        [Range((double)ValidationConstants.BookPriceMin, (double)ValidationConstants.BookPriceMax)]
+        public decimal Price { get; set; }
+
+        [Range(ValidationConstants.BookQuantityMin, ValidationConstants.BookQuantityMax)]
+        public int QuantityAvailable { get; set; }
+    }
+}
+```
+
+```csharp
+// DTOs/BookUpdateDto.cs
+using System.ComponentModel.DataAnnotations;
+using BookstoreAPI.Constants;
+
+namespace BookstoreAPI.DTOs
+{
+    public class BookUpdateDto
+    {
+        [Required]
+        [StringLength(ValidationConstants.BookTitleMaxLength)]
+        public string Title { get; set; } = string.Empty;
+
+        [Required]
+        public int AuthorId { get; set; }
+
+        [Required]
+        public int GenreId { get; set; }
+
+        [Range((double)ValidationConstants.BookPriceMin, (double)ValidationConstants.BookPriceMax)]
+        public decimal Price { get; set; }
+
+        [Range(ValidationConstants.BookQuantityMin, ValidationConstants.BookQuantityMax)]
+        public int QuantityAvailable { get; set; }
+    }
+}
+```
+
+✅ Now Book DTOs are fully validated!
+
+---
+
+# 🛠 3. Update Entity Configurations
+
+When configuring entities (`BookConfiguration`, `AuthorConfiguration`, etc.), also use the same constants.
+
+Example:
+
+```csharp
+// Configurations/BookConfiguration.cs
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using BookstoreAPI.Models;
+using BookstoreAPI.Constants;
+
+namespace BookstoreAPI.Configurations
+{
+    public class BookConfiguration : IEntityTypeConfiguration<Book>
+    {
+        public void Configure(EntityTypeBuilder<Book> builder)
+        {
+            builder.HasKey(b => b.Id);
+
+            builder.Property(b => b.Title)
+                .IsRequired()
+                .HasMaxLength(ValidationConstants.BookTitleMaxLength);
+
+            builder.Property(b => b.Price)
+                .HasPrecision(18, 2);
+
+            builder.HasOne(b => b.Author)
+                .WithMany(a => a.Books)
+                .HasForeignKey(b => b.AuthorId);
+
+            builder.HasOne(b => b.Genre)
+                .WithMany(g => g.Books)
+                .HasForeignKey(b => b.GenreId);
+        }
+    }
+}
+```
+
+Similarly update `AuthorConfiguration` and `GenreConfiguration`:
+
+```csharp
+builder.Property(a => a.Name)
+    .IsRequired()
+    .HasMaxLength(ValidationConstants.AuthorNameMaxLength);
+```
+
+```csharp
+builder.Property(g => g.Name)
+    .IsRequired()
+    .HasMaxLength(ValidationConstants.GenreNameMaxLength);
+```
+
+---
+
+# 📋 Summary
+
+| Step | Status |
+|:-|:-|
+| Centralized Validation Constants | ✅ Done |
+| DTO Attributes Updated | ✅ Done |
+| Entity Configurations Updated | ✅ Done |
+| Book DTOs have Full Validation | ✅ Done |
+
+---
+
+# ✅ Now your code is:
+- **Centralized and maintainable.**
+- **Validation consistent between database and API layer.**
+- **Easily adjustable** (change in one place).
+
+---
+
+# 🚀 Next Logical Steps
+
+1. Build **Controllers** using these DTOs.
+2. Add **Global Model Validation** handling (400 on bad DTOs automatically).
+3. Start **Unit Testing** Services.
+
+---
+
+Would you like me to **create the Controllers next**? 🚀  
+(If yes, I can generate `BookController`, `AuthorController`, `GenreController` quickly — all using clean async endpoints!)  
+Ready when you are 👇🏻
+
+
+Q: our current approach doesn't allow to include Genre and Author when in GetByIdAsync and GetAllAsync repository methods
+
+A: Exactly — good catch.  
+You're right: **currently** the `IRepository<T>` is *too generic* and **doesn't allow including navigation properties** like `Author` or `Genre`.
+
+---
+# 🎯 The Problem:
+- In `GetAllAsync()` and `GetByIdAsync()`, we sometimes want **eager loading** (`Include()` Author, Genre for Book).
+- But the current `IRepository` only has very basic methods like:
+  ```csharp
+  Task<IEnumerable<T>> GetAllAsync();
+  Task<T?> GetByIdAsync(int id);
+  ```
+
+---
+# 🛠️ Solution Plan:
+We have **two good options**:
+### Option 1 — Overload `GetAllAsync` and `GetByIdAsync` to accept an `Expression<Func<T, object>>[] includes`
+(✅ Best, flexible and scalable.)
+
+Example:
+
+```csharp
+Task<IEnumerable<T>> GetAllAsync(params Expression<Func<T, object>>[] includes);
+Task<T?> GetByIdAsync(int id, params Expression<Func<T, object>>[] includes);
+```
+
+This way, when calling `GetAllAsync`, you can pass:
+```csharp
+await _bookRepository.GetAllAsync(b => b.Author, b => b.Genre);
+```
+It dynamically applies `.Include(b => b.Author).Include(b => b.Genre)`!
+
+---
+
+# ✨ Step-by-step to Implement Option 1:
+
+---
+
+## 1. Update IRepository.cs
+
+```csharp
+using System.Linq.Expressions;
+
+namespace BookstoreAPI.Repositories
+{
+    public interface IRepository<T> where T : class
+    {
+        Task<IEnumerable<T>> GetAllAsync(params Expression<Func<T, object>>[] includes);
+        Task<T?> GetByIdAsync(int id, params Expression<Func<T, object>>[] includes);
+        Task AddAsync(T entity);
+        void Update(T entity);
+        void Delete(T entity);
+        Task SaveChangesAsync();
+    }
+}
+```
+
+---
+
+## 2. Update Repository.cs Implementation
+
+```csharp
+using Microsoft.EntityFrameworkCore;
+using System.Linq.Expressions;
+
+namespace BookstoreAPI.Repositories
+{
+    public class Repository<T> : IRepository<T> where T : class
+    {
+        private readonly AppDbContext _context;
+        private readonly DbSet<T> _dbSet;
+
+        public Repository(AppDbContext context)
+        {
+            _context = context;
+            _dbSet = context.Set<T>();
+        }
+
+        public async Task<IEnumerable<T>> GetAllAsync(params Expression<Func<T, object>>[] includes)
+        {
+            IQueryable<T> query = _dbSet;
+
+            foreach (var include in includes)
+            {
+                query = query.Include(include);
+            }
+
+            return await query.ToListAsync();
+        }
+
+        public async Task<T?> GetByIdAsync(int id, params Expression<Func<T, object>>[] includes)
+        {
+            IQueryable<T> query = _dbSet;
+
+            foreach (var include in includes)
+            {
+                query = query.Include(include);
+            }
+
+            return await query.FirstOrDefaultAsync(e => EF.Property<int>(e, "Id") == id);
+        }
+
+        public async Task AddAsync(T entity)
+        {
+            await _dbSet.AddAsync(entity);
+        }
+
+        public void Update(T entity)
+        {
+            _dbSet.Update(entity);
+        }
+
+        public void Delete(T entity)
+        {
+            _dbSet.Remove(entity);
+        }
+
+        public async Task SaveChangesAsync()
+        {
+            await _context.SaveChangesAsync();
+        }
+    }
+}
+```
+
+---
+
+## 3. Usage in BookService
+
+Now, in `BookService`, when getting books you can **eager load** `Author` and `Genre`:
+
+```csharp
+var books = await _bookRepository.GetAllAsync(b => b.Author, b => b.Genre);
+```
+
+```csharp
+var book = await _bookRepository.GetByIdAsync(id, b => b.Author, b => b.Genre);
+```
+
+Then you can manually map the Book + Author.Name + Genre.Name into your `BookDto`.
+
+---
+
+# 📈 Why is this better?
+
+✅ Super **flexible** (any repo can now include related entities without hardcoding).  
+✅ **Extensible** (you can later add filtering, ordering, etc.).  
+✅ Keeps repository **generic** but still **powerful**.
+
+---
+
+# 🚀 Summary
+
+| Task | Status |
+|:-|:-|
+| Allow including navigation properties | ✅ Done (using Expression Includes) |
+| No breaking changes to other services | ✅ Smooth transition |
+| Ready to eagerly load Author/Genre for Book | ✅ |
+
+---
+
+# 📋 Quick Reminder
+
+After this, when you call `GetAllAsync()` for Books, you should **always** remember to include `Author` and `Genre` if you need them populated.
+
+---
+
+# ✅ Would you like me to next:
+- Update **BookService** to use this new includes system for `GetAllAsync` / `GetByIdAsync`?  
+- Then update the **BookDto** so it returns **Author Name** and **Genre Name** instead of just their Ids?
+
+👉🏻 This would make your API super user-friendly ("give me books with full author and genre info").  
+Shall I proceed with that? 🚀
+
+
+Q: let's create a base class or inreface for entites that to ensure that they have Id property and make the repository accept it
+
+A: Exactly — great instinct!  
+You spotted another clean architecture improvement:  
+✅ Force **all Entities** to have an `Id` field.  
+✅ Make the **Repository** require only those Entities.
+
+---
+
+# 🛠️ Plan
+
+We'll:
+
+1. Create a **Base Entity Interface** (`IEntity`) that exposes the `Id` property.
+2. Update all your **Entities** (`Book`, `Author`, `Genre`) to implement `IEntity`.
+3. Make `IRepository<T>` accept only `T : class, IEntity`.
+4. Update repository methods that access `Id` safely (e.g., `GetByIdAsync`).
+
+---
+
+# 📄 1. Create IEntity.cs
+
+```csharp
+// Models/IEntity.cs
+namespace BookstoreAPI.Models
+{
+    public interface IEntity
+    {
+        int Id { get; set; }
+    }
+}
+```
+
+---
+
+# ✍ 2. Update Your Entities
+
+```csharp
+// Models/Author.cs
+namespace BookstoreAPI.Models
+{
+    public class Author : IEntity
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public ICollection<Book> Books { get; set; } = new List<Book>();
+    }
+}
+```
+
+```csharp
+// Models/Genre.cs
+namespace BookstoreAPI.Models
+{
+    public class Genre : IEntity
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public ICollection<Book> Books { get; set; } = new List<Book>();
+    }
+}
+```
+
+```csharp
+// Models/Book.cs
+namespace BookstoreAPI.Models
+{
+    public class Book : IEntity
+    {
+        public int Id { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public decimal Price { get; set; }
+        public int QuantityAvailable { get; set; }
+        public int AuthorId { get; set; }
+        public Author Author { get; set; } = null!;
+        public int GenreId { get; set; }
+        public Genre Genre { get; set; } = null!;
+    }
+}
+```
+
+---
+
+# 🛠️ 3. Update IRepository and Repository
+
+## IRepository.cs
+
+```csharp
+using System.Linq.Expressions;
+using BookstoreAPI.Models;
+
+namespace BookstoreAPI.Repositories
+{
+    public interface IRepository<T> where T : class, IEntity
+    {
+        Task<IEnumerable<T>> GetAllAsync(params Expression<Func<T, object>>[] includes);
+        Task<T?> GetByIdAsync(int id, params Expression<Func<T, object>>[] includes);
+        Task AddAsync(T entity);
+        void Update(T entity);
+        void Delete(T entity);
+        Task SaveChangesAsync();
+    }
+}
+```
+
+✅ Now `T` must implement `IEntity` to be used in Repository.
+
+---
+
+## Repository.cs
+
+Already safe now!  
+Small tweak: since we are guaranteed `T : IEntity`, we can access `.Id` cleanly.
+
+```csharp
+public async Task<T?> GetByIdAsync(int id, params Expression<Func<T, object>>[] includes)
+{
+    IQueryable<T> query = _dbSet;
+
+    foreach (var include in includes)
+    {
+        query = query.Include(include);
+    }
+
+    return await query.FirstOrDefaultAsync(e => e.Id == id);
+}
+```
+
+✅ Clean. No weird EF.Property hacks anymore!
+
+---
+
+# 📈 Why is this better?
+
+| Old | New |
+|:--|:--|
+| Repository worked with **any class** | Repository works only with **Entities with Id** |
+| Had to use EF.Property() hack | Direct clean access to `e.Id` |
+| No enforcement | Compile-time safety |
+
+---
+
+# 🧹 Quick Recap
+
+| Step | Status |
+|:--|:--|
+| IEntity interface created | ✅ Done |
+| Entities updated to implement IEntity | ✅ Done |
+| IRepository/Repository updated for IEntity constraint | ✅ Done |
+| Clean GetById using `.Id` | ✅ Done |
+
+---
+
+# 🚀 Next suggestions:
+
+- **Update BookService** to include Author and Genre in queries.
+- **Update BookDto** to return AuthorName and GenreName.
+- **Create Controllers** for Book, Author, Genre.
+
+---
+
+Would you like me to **proceed** with:
+✅ updating `BookService` with `Includes`  
+✅ updating `BookDto` to show `AuthorName`, `GenreName`?
+
+👉🏻 It would make your API super rich and nice to consume!  
+Ready to move? 🚀
+
+
+Q: you forgot about FindAsync method. Add includes here as well and write the implementation
+
+A: Good catch!  
+You're absolutely right — we still need to handle **FindAsync** properly.
+
+---
+
+# 🎯 Problem:
+- `FindAsync` was **not** yet updated to support **`includes`**.
+- We should make it **consistent** with `GetByIdAsync`, `GetAllAsync`.
+
+---
+
+# 🛠 Updated Plan:
+
+✅ Add this method to `IRepository<T>`:
+
+```csharp
+Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate, params Expression<Func<T, object>>[] includes);
+```
+
+✅ Implement it properly in `Repository<T>`.
+
+✅ **Apply Includes** before filtering (not after!).
+
+---
+
+# ✍ Step-by-Step
+
+---
+
+## 1. Update IRepository<T>
+
+```csharp
+using System.Linq.Expressions;
+using BookstoreAPI.Models;
+
+namespace BookstoreAPI.Repositories
+{
+    public interface IRepository<T> where T : class, IEntity
+    {
+        Task<IEnumerable<T>> GetAllAsync(params Expression<Func<T, object>>[] includes);
+        Task<T?> GetByIdAsync(int id, params Expression<Func<T, object>>[] includes);
+        Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate, params Expression<Func<T, object>>[] includes);
+        Task AddAsync(T entity);
+        void Update(T entity);
+        void Delete(T entity);
+        Task SaveChangesAsync();
+    }
+}
+```
+
+---
+
+## 2. Implement FindAsync in Repository<T>
+
+```csharp
+using Microsoft.EntityFrameworkCore;
+using System.Linq.Expressions;
+using BookstoreAPI.Models;
+
+namespace BookstoreAPI.Repositories
+{
+    public class Repository<T> : IRepository<T> where T : class, IEntity
+    {
+        private readonly AppDbContext _context;
+        private readonly DbSet<T> _dbSet;
+
+        public Repository(AppDbContext context)
+        {
+            _context = context;
+            _dbSet = context.Set<T>();
+        }
+
+        public async Task<IEnumerable<T>> GetAllAsync(params Expression<Func<T, object>>[] includes)
+        {
+            IQueryable<T> query = _dbSet;
+
+            foreach (var include in includes)
+                query = query.Include(include);
+
+            return await query.ToListAsync();
+        }
+
+        public async Task<T?> GetByIdAsync(int id, params Expression<Func<T, object>>[] includes)
+        {
+            IQueryable<T> query = _dbSet;
+
+            foreach (var include in includes)
+                query = query.Include(include);
+
+            return await query.FirstOrDefaultAsync(e => e.Id == id);
+        }
+
+        public async Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate, params Expression<Func<T, object>>[] includes)
+        {
+            IQueryable<T> query = _dbSet;
+
+            foreach (var include in includes)
+                query = query.Include(include);
+
+            return await query.Where(predicate).ToListAsync();
+        }
+
+        public async Task AddAsync(T entity)
+        {
+            await _dbSet.AddAsync(entity);
+        }
+
+        public void Update(T entity)
+        {
+            _dbSet.Update(entity);
+        }
+
+        public void Delete(T entity)
+        {
+            _dbSet.Remove(entity);
+        }
+
+        public async Task SaveChangesAsync()
+        {
+            await _context.SaveChangesAsync();
+        }
+    }
+}
+```
+
+---
+
+# 📋 Now FindAsync works like this:
+
+✅ Pass a **predicate** (e.g., `b => b.Price > 100`).  
+✅ Pass **includes** if needed (e.g., `b => b.Author`).
+
+Example usage:
+
+```csharp
+var expensiveBooks = await _bookRepository.FindAsync(
+    b => b.Price > 100, 
+    b => b.Author,
+    b => b.Genre
+);
+```
+
+✅ Returns list of Books over $100 **with** `Author` and `Genre` populated.
+
+---
+
+# 📈 Summary Table:
+
+| Method         | Supported Includes? | Notes |
+|:---------------|:--------------------|:------|
+| `GetAllAsync`  | ✅ | |
+| `GetByIdAsync` | ✅ | |
+| `FindAsync`    | ✅ (Now added) | |
+| `Add/Update/Delete/Save` | - | |
+
+---
+
+# ✅ Clean Repository Layer is Ready!
+
+---
+
+# 🚀 NEXT Moves?
+
+- **Update BookService** to use `FindAsync` for searching (title, author name, genre).
+- **Prepare Controllers** (BookController, AuthorController, GenreController).
+- **Add basic Unit Tests** (Mock Repository + Services).
+
+---
+
+Would you like me to continue with the **BookService** updates next (especially search)?  
+👉🏻 I can show you how to implement **dynamic search** (Title/Author/Genre) super cleanly! 🚀
+
+
+Q: the same logic to apply includes is used 3 times: public async Task<IEnumerable> GetAllAsync(params Expression<Func<T, object>>[] includes) { IQueryable query = _dbSet;
+
+    foreach (var include in includes)
+        query = query.Include(include);
+
+    return await query.ToListAsync();
+}
+
+public async Task<T?> GetByIdAsync(int id, params Expression<Func<T, object>>[] includes)
+{
+    IQueryable<T> query = _dbSet;
+
+    foreach (var include in includes)
+        query = query.Include(include);
+
+    return await query.FirstOrDefaultAsync(e => e.Id == id);
+}
+
+public async Task<IEnumerable<T>> FindAsync(
+    Expression<Func<T, bool>> predicate,
+    params Expression<Func<T, object>>[] includes)
+{
+    IQueryable<T> query = _dbSet;
+
+    foreach (var include in includes)
+        query = query.Include(include);
+
+    return await query.Where(predicate).ToListAsync();
+}
+
+fix it please
+
+A: I see the issue - you're repeating the same logic to handle includes across three different methods. Let me refactor this code to eliminate the duplication by creating a private helper method:
+
+```csharp
+public async Task<IEnumerable<T>> GetAllAsync(params Expression<Func<T, object>>[] includes)
+{
+    IQueryable<T> query = ApplyIncludes(includes);
+    return await query.ToListAsync();
+}
+
+public async Task<T?> GetByIdAsync(int id, params Expression<Func<T, object>>[] includes)
+{
+    IQueryable<T> query = ApplyIncludes(includes);
+    return await query.FirstOrDefaultAsync(e => e.Id == id);
+}
+
+public async Task<IEnumerable<T>> FindAsync(
+    Expression<Func<T, bool>> predicate,
+    params Expression<Func<T, object>>[] includes)
+{
+    IQueryable<T> query = ApplyIncludes(includes);
+    return await query.Where(predicate).ToListAsync();
+}
+
+private IQueryable<T> ApplyIncludes(Expression<Func<T, object>>[] includes)
+{
+    IQueryable<T> query = _dbSet;
+    
+    foreach (var include in includes)
+        query = query.Include(include);
+        
+    return query;
+}
+```
+
+This refactoring extracts the common functionality into a private helper method `ApplyIncludes()` that handles applying all include expressions to the base query. Each method now uses this helper, which makes the code more maintainable and eliminates the duplication.
+
+
+Q: please examine this class and suggest refactoring if necessary to follow clean code and solid: public class GenreService : IGenreService
+{
+    private readonly IRepository<Genre> _genreRepository;
+    public GenreService(IRepository<Genre> genreRepository)
+    {
+        _genreRepository = genreRepository;
+    }
+    public async Task<List<GenreDto>> GetAllAsync()
+    {
+        var genres = await _genreRepository.GetAllAsync();
+        return genres.ConvertAll(g => new GenreDto { Id = g.Id, Name = g.Name });
+    }
+    public async Task<GenreDto?> GetByIdAsync(int id)
+    {
+        var genre = await _genreRepository.GetByIdAsync(id);
+        return genre == null ? null : new GenreDto { Id = genre.Id, Name = genre.Name };
+    }
+    public async Task AddAsync(GenreCreateDto dto)
+    {
+        var genre = new Genre { Name = dto.Name };
+        await _genreRepository.AddAsync(genre);
+        await _genreRepository.SaveChangesAsync();
+    }
+    public async Task UpdateAsync(int id, GenreUpdateDto dto)
+    {
+        var genre = await _genreRepository.GetByIdAsync(id);
+        if (genre == null) return;
+        genre.Name = dto.Name;
+        _genreRepository.Update(genre);
+        await _genreRepository.SaveChangesAsync();
+    }
+    public async Task DeleteAsync(int id)
+    {
+        var genre = await _genreRepository.GetByIdAsync(id);
+        if (genre != null)
+        {
+            _genreRepository.Delete(genre);
+            await _genreRepository.SaveChangesAsync();
+        }
+    }
+}
+
+
+A: Looking at your `GenreService` class, I can identify a few opportunities for refactoring to better follow clean code principles and SOLID design.
+
+Here's my analysis and suggested improvements:
+
+1. **Mapping Logic Duplication**: You're manually mapping between entities and DTOs in multiple places.
+2. **Lack of Error Handling**: The service silently ignores cases where entities aren't found.
+3. **No Validation**: Input validation is missing.
+4. **Potential SRP Violation**: The service is handling both business logic and mapping.
+5. **Missing Interface Definition**: We don't see the interface, which is important for the Dependency Inversion principle.
+
+Here's a refactored version:
+
+```csharp
+public class GenreService : IGenreService
+{
+    private readonly IRepository<Genre> _genreRepository;
+    private readonly IMapper _mapper;  // Using AutoMapper or similar mapper
+
+    public GenreService(IRepository<Genre> genreRepository, IMapper mapper)
+    {
+        _genreRepository = genreRepository ?? throw new ArgumentNullException(nameof(genreRepository));
+        _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+    }
+
+    public async Task<List<GenreDto>> GetAllAsync()
+    {
+        var genres = await _genreRepository.GetAllAsync();
+        return _mapper.Map<List<GenreDto>>(genres);
+    }
+
+    public async Task<GenreDto> GetByIdAsync(int id)
+    {
+        var genre = await _genreRepository.GetByIdAsync(id);
+        if (genre == null)
+            throw new NotFoundException($"Genre with ID {id} not found");
+            
+        return _mapper.Map<GenreDto>(genre);
+    }
+
+    public async Task<int> AddAsync(GenreCreateDto dto)
+    {
+        ValidateGenre(dto);
+        
+        var genre = _mapper.Map<Genre>(dto);
+        await _genreRepository.AddAsync(genre);
+        await _genreRepository.SaveChangesAsync();
+        
+        return genre.Id;
+    }
+
+    public async Task UpdateAsync(int id, GenreUpdateDto dto)
+    {
+        ValidateGenre(dto);
+        
+        var genre = await _genreRepository.GetByIdAsync(id);
+        if (genre == null)
+            throw new NotFoundException($"Genre with ID {id} not found");
+            
+        _mapper.Map(dto, genre);  // Updates existing entity with DTO values
+        _genreRepository.Update(genre);
+        await _genreRepository.SaveChangesAsync();
+    }
+
+    public async Task DeleteAsync(int id)
+    {
+        var genre = await _genreRepository.GetByIdAsync(id);
+        if (genre == null)
+            throw new NotFoundException($"Genre with ID {id} not found");
+            
+        _genreRepository.Delete(genre);
+        await _genreRepository.SaveChangesAsync();
+    }
+    
+    private void ValidateGenre(GenreCreateDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Name))
+            throw new ValidationException("Genre name cannot be empty");
+            
+        // Additional validation rules as needed
+    }
+    
+    private void ValidateGenre(GenreUpdateDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Name))
+            throw new ValidationException("Genre name cannot be empty");
+            
+        // Additional validation rules as needed
+    }
+}
+
+// Custom exceptions for cleaner error handling
+public class NotFoundException : Exception
+{
+    public NotFoundException(string message) : base(message) { }
+}
+
+public class ValidationException : Exception
+{
+    public ValidationException(string message) : base(message) { }
+}
+```
+
+Here are the key improvements:
+
+1. **Object Mapping**: Introduced a proper mapper (like AutoMapper) to handle entity-DTO conversions
+2. **Error Handling**: Added explicit exceptions for various error cases
+3. **Input Validation**: Added validation methods
+4. **Null Checks**: Added proper null checks for dependencies
+5. **Consistent Return Values**: The AddAsync method now returns the created ID
+6. **Explicit Failures**: Methods now throw exceptions instead of silently failing
+
+To fully comply with SOLID principles, you should:
+
+1. Define the `IGenreService` interface clearly with all methods
+2. Consider splitting validation into a separate service if it becomes complex
+3. Ensure your application has proper exception handling middleware to convert these exceptions to appropriate HTTP responses
+
+Would you like me to further refine any specific aspect of this refactoring?
+
+
+Q: I'm using validation attributes + api controllers for validaton.
+also, I'm not gonna use Automapper, let's use manual mapping instead
+
+A: I understand your constraints. Let's refactor your `GenreService` class without AutoMapper, while still maintaining clean code principles and SOLID design. We'll keep validation at the API controller level and use manual mapping.
+
+Here's the refined version:
+
+```csharp
+public class GenreService : IGenreService
+{
+    private readonly IRepository<Genre> _genreRepository;
+
+    public GenreService(IRepository<Genre> genreRepository)
+    {
+        _genreRepository = genreRepository ?? throw new ArgumentNullException(nameof(genreRepository));
+    }
+
+    public async Task<List<GenreDto>> GetAllAsync()
+    {
+        var genres = await _genreRepository.GetAllAsync();
+        return genres.Select(MapToDto).ToList();
+    }
+
+    public async Task<GenreDto?> GetByIdAsync(int id)
+    {
+        var genre = await _genreRepository.GetByIdAsync(id);
+        return genre == null ? null : MapToDto(genre);
+    }
+
+    public async Task<int> AddAsync(GenreCreateDto dto)
+    {
+        var genre = new Genre { Name = dto.Name };
+        await _genreRepository.AddAsync(genre);
+        await _genreRepository.SaveChangesAsync();
+        
+        return genre.Id;
+    }
+
+    public async Task UpdateAsync(int id, GenreUpdateDto dto)
+    {
+        var genre = await _genreRepository.GetByIdAsync(id);
+        if (genre == null)
+            throw new EntityNotFoundException($"Genre with ID {id} not found");
+            
+        genre.Name = dto.Name;
+        _genreRepository.Update(genre);
+        await _genreRepository.SaveChangesAsync();
+    }
+
+    public async Task DeleteAsync(int id)
+    {
+        var genre = await _genreRepository.GetByIdAsync(id);
+        if (genre == null)
+            throw new EntityNotFoundException($"Genre with ID {id} not found");
+            
+        _genreRepository.Delete(genre);
+        await _genreRepository.SaveChangesAsync();
+    }
+    
+    private static GenreDto MapToDto(Genre genre)
+    {
+        return new GenreDto
+        {
+            Id = genre.Id,
+            Name = genre.Name
+        };
+    }
+}
+
+// Custom exception for better error handling
+public class EntityNotFoundException : Exception
+{
+    public EntityNotFoundException(string message) : base(message) { }
+}
+```
+
+Key improvements made:
+
+1. **Extracted mapping to a method**: The `MapToDto` method centralizes entity-to-DTO mapping logic to avoid repetition.
+
+2. **Added consistent error handling**: Throws meaningful exceptions when entities aren't found.
+
+3. **Return value from AddAsync**: Now returns the ID of the newly created entity.
+
+4. **Null check on dependency**: Added proper null check for the repository in the constructor.
+
+5. **Simplified GetAllAsync**: Using LINQ's `Select` instead of `ConvertAll` for cleaner syntax.
+
+6. **Consistent approach to entity not found**: Now we throw exceptions in Update and Delete methods rather than silently ignoring the issue.
+
+This approach maintains the simplicity of manual mapping while improving code quality, maintainability, and error handling. Since you're handling validation at the controller level with validation attributes, we've omitted validation logic from the service layer.
+
+
+Q: example: public class GenreService : IGenreService
+{
+    private readonly IRepository<Genre> _genreRepository;
+    public GenreService(IRepository<Genre> genreRepository)
+    {
+        _genreRepository = genreRepository ?? throw new ArgumentNullException(nameof(genreRepository));
+    }
+    public async Task<List<GenreDto>> GetAllAsync()
+    {
+        var genres = await _genreRepository.GetAllAsync();
+        return genres.ConvertAll(MapToDto);
+    }
+    public async Task<GenreDto?> GetByIdAsync(int id)
+    {
+        var genre = await _genreRepository.GetByIdAsync(id);
+        if (genre == null)
+            throw new NotFoundException($"Genre with ID {id} not found");
+        return genre == null ? null : MapToDto(genre);
+    }
+    public async Task<int> AddAsync(GenreCreateDto dto)
+    {
+        var genre = new Genre { Name = dto.Name };
+        await _genreRepository.AddAsync(genre);
+        await _genreRepository.SaveChangesAsync();
+        return genre.Id;
+    }
+    public async Task UpdateAsync(int id, GenreUpdateDto dto)
+    {
+        var genre = await _genreRepository.GetByIdAsync(id);
+        if (genre == null)
+            throw new NotFoundException($"Genre with ID {id} not found");
+        genre.Name = dto.Name;
+        _genreRepository.Update(genre);
+        await _genreRepository.SaveChangesAsync();
+    }
+    public async Task DeleteAsync(int id)
+    {
+        var genre = await _genreRepository.GetByIdAsync(id);
+        if (genre == null)
+            throw new NotFoundException($"Genre with ID {id} not found");
+        _genreRepository.Delete(genre);
+        await _genreRepository.SaveChangesAsync();
+    }
+    private static GenreDto MapToDto(Genre genre)
+    {
+        return new GenreDto
+        {
+            Id = genre.Id,
+            Name = genre.Name
+        };
+    }
+}
+
+do similar adjustments in other services: public class AuthorService : IAuthorService
+{
+    private readonly IRepository<Author> _authorRepository;
+    public AuthorService(IRepository<Author> authorRepository)
+    {
+        _authorRepository = authorRepository;
+    }
+    public async Task<List<AuthorDto>> GetAllAsync()
+    {
+        var authors = await _authorRepository.GetAllAsync();
+        return authors.ConvertAll(a => new AuthorDto { Id = a.Id, Name = a.Name });
+    }
+    public async Task<AuthorDto?> GetByIdAsync(int id)
+    {
+        var author = await _authorRepository.GetByIdAsync(id);
+        return author == null ? null : new AuthorDto { Id = author.Id, Name = author.Name };
+    }
+    public async Task AddAsync(AuthorCreateDto dto)
+    {
+        var author = new Author { Name = dto.Name };
+        await _authorRepository.AddAsync(author);
+        await _authorRepository.SaveChangesAsync();
+    }
+    public async Task UpdateAsync(int id, AuthorUpdateDto dto)
+    {
+        var author = await _authorRepository.GetByIdAsync(id);
+        if (author == null) return;
+        author.Name = dto.Name;
+        _authorRepository.Update(author);
+        await _authorRepository.SaveChangesAsync();
+    }
+    public async Task DeleteAsync(int id)
+    {
+        var author = await _authorRepository.GetByIdAsync(id);
+        if (author != null)
+        {
+            _authorRepository.Delete(author);
+            await _authorRepository.SaveChangesAsync();
+        }
+    }
+}
+
+public class BookService : IBookService
+{
+    private readonly IRepository<Book> _bookRepository;
+    public BookService(IRepository<Book> bookRepository)
+    {
+        _bookRepository = bookRepository;
+    }
+    public async Task<List<BookDto>> GetAllAsync()
+    {
+        var books = await _bookRepository.GetAllAsync(b => b.Author, b => b.Genre);
+        return books.ConvertAll(MapToDto);
+    }
+    public async Task<BookDto?> GetByIdAsync(int id)
+    {
+        var book = await _bookRepository.GetByIdAsync(id, b => b.Author, b => b.Genre);
+        return book == null ? null : MapToDto(book);
+    }
+    public async Task<List<BookDto>> SearchAsync(string? title, string? author, string? genre)
+    {
+        var books = await _bookRepository.FindAsync(b =>
+            (string.IsNullOrEmpty(title) || b.Title.Contains(title)) &&
+            (string.IsNullOrEmpty(author) || b.Author.Name.Contains(author)) &&
+            (string.IsNullOrEmpty(genre) || b.Genre.Name.Contains(genre)),
+            b => b.Author, b => b.Genre
+        );
+        return books.ConvertAll(MapToDto);
+    }
+    public async Task AddAsync(BookCreateDto bookDto)
+    {
+        var book = new Book
+        {
+            Title = bookDto.Title,
+            AuthorId = bookDto.AuthorId,
+            GenreId = bookDto.GenreId,
+            Price = bookDto.Price,
+            QuantityAvailable = bookDto.QuantityAvailable
+        };
+        await _bookRepository.AddAsync(book);
+        await _bookRepository.SaveChangesAsync();
+    }
+    public async Task UpdateAsync(int id, BookUpdateDto bookDto)
+    {
+        var book = await _bookRepository.GetByIdAsync(id);
+        if (book == null) return;
+        book.Title = bookDto.Title;
+        book.AuthorId = bookDto.AuthorId;
+        book.GenreId = bookDto.GenreId;
+        book.Price = bookDto.Price;
+        book.QuantityAvailable = bookDto.QuantityAvailable;
+        _bookRepository.Update(book);
+        await _bookRepository.SaveChangesAsync();
+    }
+    public async Task DeleteAsync(int id)
+    {
+        var book = await _bookRepository.GetByIdAsync(id);
+        if (book != null)
+        {
+            _bookRepository.Delete(book);
+            await _bookRepository.SaveChangesAsync();
+        }
+    }
+    private static BookDto MapToDto(Book book)
+    {
+        return new BookDto
+        {
+            Id = book.Id,
+            Title = book.Title,
+            AuthorId = book.AuthorId,
+            AuthorName = book.Author?.Name ?? string.Empty,
+            GenreId = book.GenreId,
+            GenreName = book.Genre?.Name ?? string.Empty,
+            Price = book.Price,
+            QuantityAvailable = book.QuantityAvailable
+        };
+    }
+}
+
+A: Here are the refactored versions of your `AuthorService` and `BookService` classes, applying similar improvements as in the `GenreService` example:
+
+```csharp
+public class AuthorService : IAuthorService
+{
+    private readonly IRepository<Author> _authorRepository;
+    
+    public AuthorService(IRepository<Author> authorRepository)
+    {
+        _authorRepository = authorRepository ?? throw new ArgumentNullException(nameof(authorRepository));
+    }
+    
+    public async Task<List<AuthorDto>> GetAllAsync()
+    {
+        var authors = await _authorRepository.GetAllAsync();
+        return authors.ConvertAll(MapToDto);
+    }
+    
+    public async Task<AuthorDto?> GetByIdAsync(int id)
+    {
+        var author = await _authorRepository.GetByIdAsync(id);
+        if (author == null)
+            throw new NotFoundException($"Author with ID {id} not found");
+        return MapToDto(author);
+    }
+    
+    public async Task<int> AddAsync(AuthorCreateDto dto)
+    {
+        var author = new Author { Name = dto.Name };
+        await _authorRepository.AddAsync(author);
+        await _authorRepository.SaveChangesAsync();
+        return author.Id;
+    }
+    
+    public async Task UpdateAsync(int id, AuthorUpdateDto dto)
+    {
+        var author = await _authorRepository.GetByIdAsync(id);
+        if (author == null)
+            throw new NotFoundException($"Author with ID {id} not found");
+        
+        author.Name = dto.Name;
+        _authorRepository.Update(author);
+        await _authorRepository.SaveChangesAsync();
+    }
+    
+    public async Task DeleteAsync(int id)
+    {
+        var author = await _authorRepository.GetByIdAsync(id);
+        if (author == null)
+            throw new NotFoundException($"Author with ID {id} not found");
+        
+        _authorRepository.Delete(author);
+        await _authorRepository.SaveChangesAsync();
+    }
+    
+    private static AuthorDto MapToDto(Author author)
+    {
+        return new AuthorDto
+        {
+            Id = author.Id,
+            Name = author.Name
+        };
+    }
+}
+
+public class BookService : IBookService
+{
+    private readonly IRepository<Book> _bookRepository;
+    
+    public BookService(IRepository<Book> bookRepository)
+    {
+        _bookRepository = bookRepository ?? throw new ArgumentNullException(nameof(bookRepository));
+    }
+    
+    public async Task<List<BookDto>> GetAllAsync()
+    {
+        var books = await _bookRepository.GetAllAsync(b => b.Author, b => b.Genre);
+        return books.ConvertAll(MapToDto);
+    }
+    
+    public async Task<BookDto?> GetByIdAsync(int id)
+    {
+        var book = await _bookRepository.GetByIdAsync(id, b => b.Author, b => b.Genre);
+        if (book == null)
+            throw new NotFoundException($"Book with ID {id} not found");
+        return MapToDto(book);
+    }
+    
+    public async Task<List<BookDto>> SearchAsync(string? title, string? author, string? genre)
+    {
+        var books = await _bookRepository.FindAsync(b =>
+            (string.IsNullOrEmpty(title) || b.Title.Contains(title)) &&
+            (string.IsNullOrEmpty(author) || b.Author.Name.Contains(author)) &&
+            (string.IsNullOrEmpty(genre) || b.Genre.Name.Contains(genre)),
+            b => b.Author, b => b.Genre
+        );
+        return books.ConvertAll(MapToDto);
+    }
+    
+    public async Task<int> AddAsync(BookCreateDto bookDto)
+    {
+        var book = new Book
+        {
+            Title = bookDto.Title,
+            AuthorId = bookDto.AuthorId,
+            GenreId = bookDto.GenreId,
+            Price = bookDto.Price,
+            QuantityAvailable = bookDto.QuantityAvailable
+        };
+        await _bookRepository.AddAsync(book);
+        await _bookRepository.SaveChangesAsync();
+        return book.Id;
+    }
+    
+    public async Task UpdateAsync(int id, BookUpdateDto bookDto)
+    {
+        var book = await _bookRepository.GetByIdAsync(id);
+        if (book == null)
+            throw new NotFoundException($"Book with ID {id} not found");
+            
+        book.Title = bookDto.Title;
+        book.AuthorId = bookDto.AuthorId;
+        book.GenreId = bookDto.GenreId;
+        book.Price = bookDto.Price;
+        book.QuantityAvailable = bookDto.QuantityAvailable;
+        _bookRepository.Update(book);
+        await _bookRepository.SaveChangesAsync();
+    }
+    
+    public async Task DeleteAsync(int id)
+    {
+        var book = await _bookRepository.GetByIdAsync(id);
+        if (book == null)
+            throw new NotFoundException($"Book with ID {id} not found");
+            
+        _bookRepository.Delete(book);
+        await _bookRepository.SaveChangesAsync();
+    }
+    
+    private static BookDto MapToDto(Book book)
+    {
+        return new BookDto
+        {
+            Id = book.Id,
+            Title = book.Title,
+            AuthorId = book.AuthorId,
+            AuthorName = book.Author?.Name ?? string.Empty,
+            GenreId = book.GenreId,
+            GenreName = book.Genre?.Name ?? string.Empty,
+            Price = book.Price,
+            QuantityAvailable = book.QuantityAvailable
+        };
+    }
+}
+```
+
+Key improvements made to both services:
+
+1. **Added null check for dependencies** in constructors
+
+2. **Consistent error handling** by throwing `NotFoundException` when entities aren't found
+
+3. **Extracted mapping logic** into dedicated `MapToDto` methods for the `AuthorService`
+
+4. **Return created entity ID** from `AddAsync` methods
+
+5. **Removed null conditional checks** after already checking for null and throwing exceptions
+
+6. **Consistent approach** to handling entity not found cases across all methods
+
+These changes ensure your services follow similar patterns, have consistent error handling, and properly validate their dependencies while maintaining clean, maintainable code.
+
+
+Q: write unit tests with xUnit and Mock for these 3 services. Follow MethodName[Condition]Returns/Throws... naming pattern
+
+A: ```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Moq;
+using Xunit;
+
+public class AuthorServiceTests
+{
+    private readonly Mock<IRepository<Author>> _mockRepository;
+    private readonly AuthorService _service;
+
+    public AuthorServiceTests()
+    {
+        _mockRepository = new Mock<IRepository<Author>>();
+        _service = new AuthorService(_mockRepository.Object);
+    }
+
+    [Fact]
+    public void Constructor_NullRepository_ThrowsArgumentNullException()
+    {
+        // Arrange & Act & Assert
+        Assert.Throws<ArgumentNullException>(() => new AuthorService(null));
+    }
+
+    [Fact]
+    public async Task GetAllAsync_ReturnsAllAuthors()
+    {
+        // Arrange
+        var authors = new List<Author>
+        {
+            new Author { Id = 1, Name = "Author 1" },
+            new Author { Id = 2, Name = "Author 2" }
+        };
+        _mockRepository.Setup(r => r.GetAllAsync()).ReturnsAsync(authors);
+
+        // Act
+        var result = await _service.GetAllAsync();
+
+        // Assert
+        Assert.Equal(2, result.Count);
+        Assert.Equal("Author 1", result[0].Name);
+        Assert.Equal("Author 2", result[1].Name);
+        _mockRepository.Verify(r => r.GetAllAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_ExistingId_ReturnsAuthor()
+    {
+        // Arrange
+        var author = new Author { Id = 1, Name = "Author 1" };
+        _mockRepository.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(author);
+
+        // Act
+        var result = await _service.GetByIdAsync(1);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(1, result.Id);
+        Assert.Equal("Author 1", result.Name);
+        _mockRepository.Verify(r => r.GetByIdAsync(1), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_NonExistingId_ThrowsNotFoundException()
+    {
+        // Arrange
+        _mockRepository.Setup(r => r.GetByIdAsync(99)).ReturnsAsync((Author)null);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<NotFoundException>(() => _service.GetByIdAsync(99));
+        _mockRepository.Verify(r => r.GetByIdAsync(99), Times.Once);
+    }
+
+    [Fact]
+    public async Task AddAsync_ValidAuthor_ReturnsId()
+    {
+        // Arrange
+        var dto = new AuthorCreateDto { Name = "New Author" };
+        Author savedAuthor = null;
+        
+        _mockRepository.Setup(r => r.AddAsync(It.IsAny<Author>()))
+            .Callback<Author>(a => 
+            { 
+                a.Id = 10; // Simulate DB setting Id
+                savedAuthor = a;
+            })
+            .Returns(Task.CompletedTask);
+        
+        _mockRepository.Setup(r => r.SaveChangesAsync())
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _service.AddAsync(dto);
+
+        // Assert
+        Assert.Equal(10, result);
+        Assert.NotNull(savedAuthor);
+        Assert.Equal("New Author", savedAuthor.Name);
+        _mockRepository.Verify(r => r.AddAsync(It.IsAny<Author>()), Times.Once);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_ExistingAuthor_UpdatesAuthor()
+    {
+        // Arrange
+        var author = new Author { Id = 1, Name = "Original Name" };
+        var dto = new AuthorUpdateDto { Name = "Updated Name" };
+        
+        _mockRepository.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(author);
+        _mockRepository.Setup(r => r.Update(It.IsAny<Author>()));
+        _mockRepository.Setup(r => r.SaveChangesAsync()).Returns(Task.CompletedTask);
+
+        // Act
+        await _service.UpdateAsync(1, dto);
+
+        // Assert
+        Assert.Equal("Updated Name", author.Name);
+        _mockRepository.Verify(r => r.GetByIdAsync(1), Times.Once);
+        _mockRepository.Verify(r => r.Update(author), Times.Once);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_NonExistingAuthor_ThrowsNotFoundException()
+    {
+        // Arrange
+        var dto = new AuthorUpdateDto { Name = "Updated Name" };
+        _mockRepository.Setup(r => r.GetByIdAsync(99)).ReturnsAsync((Author)null);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<NotFoundException>(() => _service.UpdateAsync(99, dto));
+        _mockRepository.Verify(r => r.GetByIdAsync(99), Times.Once);
+        _mockRepository.Verify(r => r.Update(It.IsAny<Author>()), Times.Never);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_ExistingAuthor_DeletesAuthor()
+    {
+        // Arrange
+        var author = new Author { Id = 1, Name = "Author 1" };
+        _mockRepository.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(author);
+        _mockRepository.Setup(r => r.Delete(It.IsAny<Author>()));
+        _mockRepository.Setup(r => r.SaveChangesAsync()).Returns(Task.CompletedTask);
+
+        // Act
+        await _service.DeleteAsync(1);
+
+        // Assert
+        _mockRepository.Verify(r => r.GetByIdAsync(1), Times.Once);
+        _mockRepository.Verify(r => r.Delete(author), Times.Once);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_NonExistingAuthor_ThrowsNotFoundException()
+    {
+        // Arrange
+        _mockRepository.Setup(r => r.GetByIdAsync(99)).ReturnsAsync((Author)null);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<NotFoundException>(() => _service.DeleteAsync(99));
+        _mockRepository.Verify(r => r.GetByIdAsync(99), Times.Once);
+        _mockRepository.Verify(r => r.Delete(It.IsAny<Author>()), Times.Never);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Never);
+    }
+}
+
+```
+
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Moq;
+using Xunit;
+
+public class GenreServiceTests
+{
+    private readonly Mock<IRepository<Genre>> _mockRepository;
+    private readonly GenreService _service;
+
+    public GenreServiceTests()
+    {
+        _mockRepository = new Mock<IRepository<Genre>>();
+        _service = new GenreService(_mockRepository.Object);
+    }
+
+    [Fact]
+    public void Constructor_NullRepository_ThrowsArgumentNullException()
+    {
+        // Arrange & Act & Assert
+        Assert.Throws<ArgumentNullException>(() => new GenreService(null));
+    }
+
+    [Fact]
+    public async Task GetAllAsync_ReturnsAllGenres()
+    {
+        // Arrange
+        var genres = new List<Genre>
+        {
+            new Genre { Id = 1, Name = "Fiction" },
+            new Genre { Id = 2, Name = "Non-Fiction" }
+        };
+        _mockRepository.Setup(r => r.GetAllAsync()).ReturnsAsync(genres);
+
+        // Act
+        var result = await _service.GetAllAsync();
+
+        // Assert
+        Assert.Equal(2, result.Count);
+        Assert.Equal("Fiction", result[0].Name);
+        Assert.Equal("Non-Fiction", result[1].Name);
+        _mockRepository.Verify(r => r.GetAllAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_ExistingId_ReturnsGenre()
+    {
+        // Arrange
+        var genre = new Genre { Id = 1, Name = "Fiction" };
+        _mockRepository.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(genre);
+
+        // Act
+        var result = await _service.GetByIdAsync(1);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(1, result.Id);
+        Assert.Equal("Fiction", result.Name);
+        _mockRepository.Verify(r => r.GetByIdAsync(1), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_NonExistingId_ThrowsNotFoundException()
+    {
+        // Arrange
+        _mockRepository.Setup(r => r.GetByIdAsync(99)).ReturnsAsync((Genre)null);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<NotFoundException>(() => _service.GetByIdAsync(99));
+        _mockRepository.Verify(r => r.GetByIdAsync(99), Times.Once);
+    }
+
+    [Fact]
+    public async Task AddAsync_ValidGenre_ReturnsId()
+    {
+        // Arrange
+        var dto = new GenreCreateDto { Name = "New Genre" };
+        Genre savedGenre = null;
+        
+        _mockRepository.Setup(r => r.AddAsync(It.IsAny<Genre>()))
+            .Callback<Genre>(g => 
+            { 
+                g.Id = 10; // Simulate DB setting Id
+                savedGenre = g;
+            })
+            .Returns(Task.CompletedTask);
+        
+        _mockRepository.Setup(r => r.SaveChangesAsync())
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _service.AddAsync(dto);
+
+        // Assert
+        Assert.Equal(10, result);
+        Assert.NotNull(savedGenre);
+        Assert.Equal("New Genre", savedGenre.Name);
+        _mockRepository.Verify(r => r.AddAsync(It.IsAny<Genre>()), Times.Once);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_ExistingGenre_UpdatesGenre()
+    {
+        // Arrange
+        var genre = new Genre { Id = 1, Name = "Original Genre" };
+        var dto = new GenreUpdateDto { Name = "Updated Genre" };
+        
+        _mockRepository.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(genre);
+        _mockRepository.Setup(r => r.Update(It.IsAny<Genre>()));
+        _mockRepository.Setup(r => r.SaveChangesAsync()).Returns(Task.CompletedTask);
+
+        // Act
+        await _service.UpdateAsync(1, dto);
+
+        // Assert
+        Assert.Equal("Updated Genre", genre.Name);
+        _mockRepository.Verify(r => r.GetByIdAsync(1), Times.Once);
+        _mockRepository.Verify(r => r.Update(genre), Times.Once);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_NonExistingGenre_ThrowsNotFoundException()
+    {
+        // Arrange
+        var dto = new GenreUpdateDto { Name = "Updated Genre" };
+        _mockRepository.Setup(r => r.GetByIdAsync(99)).ReturnsAsync((Genre)null);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<NotFoundException>(() => _service.UpdateAsync(99, dto));
+        _mockRepository.Verify(r => r.GetByIdAsync(99), Times.Once);
+        _mockRepository.Verify(r => r.Update(It.IsAny<Genre>()), Times.Never);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_ExistingGenre_DeletesGenre()
+    {
+        // Arrange
+        var genre = new Genre { Id = 1, Name = "Fiction" };
+        _mockRepository.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(genre);
+        _mockRepository.Setup(r => r.Delete(It.IsAny<Genre>()));
+        _mockRepository.Setup(r => r.SaveChangesAsync()).Returns(Task.CompletedTask);
+
+        // Act
+        await _service.DeleteAsync(1);
+
+        // Assert
+        _mockRepository.Verify(r => r.GetByIdAsync(1), Times.Once);
+        _mockRepository.Verify(r => r.Delete(genre), Times.Once);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_NonExistingGenre_ThrowsNotFoundException()
+    {
+        // Arrange
+        _mockRepository.Setup(r => r.GetByIdAsync(99)).ReturnsAsync((Genre)null);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<NotFoundException>(() => _service.DeleteAsync(99));
+        _mockRepository.Verify(r => r.GetByIdAsync(99), Times.Once);
+        _mockRepository.Verify(r => r.Delete(It.IsAny<Genre>()), Times.Never);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Never);
+    }
+}
+
+```
+
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Linq.Expressions;
+using System.Threading.Tasks;
+using Moq;
+using Xunit;
+
+public class BookServiceTests
+{
+    private readonly Mock<IRepository<Book>> _mockRepository;
+    private readonly BookService _service;
+
+    public BookServiceTests()
+    {
+        _mockRepository = new Mock<IRepository<Book>>();
+        _service = new BookService(_mockRepository.Object);
+    }
+
+    [Fact]
+    public void Constructor_NullRepository_ThrowsArgumentNullException()
+    {
+        // Arrange & Act & Assert
+        Assert.Throws<ArgumentNullException>(() => new BookService(null));
+    }
+
+    [Fact]
+    public async Task GetAllAsync_ReturnsAllBooks()
+    {
+        // Arrange
+        var author = new Author { Id = 1, Name = "Author 1" };
+        var genre = new Genre { Id = 1, Name = "Fiction" };
+        var books = new List<Book>
+        {
+            new Book 
+            { 
+                Id = 1, 
+                Title = "Book 1", 
+                Author = author, 
+                Genre = genre, 
+                AuthorId = author.Id, 
+                GenreId = genre.Id,
+                Price = 19.99m,
+                QuantityAvailable = 10
+            },
+            new Book 
+            { 
+                Id = 2, 
+                Title = "Book 2", 
+                Author = author, 
+                Genre = genre, 
+                AuthorId = author.Id, 
+                GenreId = genre.Id,
+                Price = 29.99m,
+                QuantityAvailable = 5
+            }
+        };
+        
+        _mockRepository.Setup(r => r.GetAllAsync(
+            It.IsAny<Expression<Func<Book, object>>>(), 
+            It.IsAny<Expression<Func<Book, object>>>()))
+            .ReturnsAsync(books);
+
+        // Act
+        var result = await _service.GetAllAsync();
+
+        // Assert
+        Assert.Equal(2, result.Count);
+        Assert.Equal("Book 1", result[0].Title);
+        Assert.Equal("Book 2", result[1].Title);
+        Assert.Equal("Author 1", result[0].AuthorName);
+        Assert.Equal("Fiction", result[0].GenreName);
+        _mockRepository.Verify(r => r.GetAllAsync(
+            It.IsAny<Expression<Func<Book, object>>>(), 
+            It.IsAny<Expression<Func<Book, object>>>()
+        ), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_ExistingId_ReturnsBook()
+    {
+        // Arrange
+        var author = new Author { Id = 1, Name = "Author 1" };
+        var genre = new Genre { Id = 1, Name = "Fiction" };
+        var book = new Book 
+        { 
+            Id = 1, 
+            Title = "Book 1", 
+            Author = author, 
+            Genre = genre, 
+            AuthorId = author.Id, 
+            GenreId = genre.Id,
+            Price = 19.99m,
+            QuantityAvailable = 10
+        };
+        
+        _mockRepository.Setup(r => r.GetByIdAsync(
+            1,
+            It.IsAny<Expression<Func<Book, object>>>(),
+            It.IsAny<Expression<Func<Book, object>>>()))
+            .ReturnsAsync(book);
+
+        // Act
+        var result = await _service.GetByIdAsync(1);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(1, result.Id);
+        Assert.Equal("Book 1", result.Title);
+        Assert.Equal("Author 1", result.AuthorName);
+        Assert.Equal("Fiction", result.GenreName);
+        Assert.Equal(19.99m, result.Price);
+        _mockRepository.Verify(r => r.GetByIdAsync(
+            1,
+            It.IsAny<Expression<Func<Book, object>>>(),
+            It.IsAny<Expression<Func<Book, object>>>()
+        ), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_NonExistingId_ThrowsNotFoundException()
+    {
+        // Arrange
+        _mockRepository.Setup(r => r.GetByIdAsync(
+            99,
+            It.IsAny<Expression<Func<Book, object>>>(),
+            It.IsAny<Expression<Func<Book, object>>>()))
+            .ReturnsAsync((Book)null);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<NotFoundException>(() => _service.GetByIdAsync(99));
+        _mockRepository.Verify(r => r.GetByIdAsync(
+            99,
+            It.IsAny<Expression<Func<Book, object>>>(),
+            It.IsAny<Expression<Func<Book, object>>>()
+        ), Times.Once);
+    }
+
+    [Fact]
+    public async Task SearchAsync_WithCriteria_ReturnsMatchingBooks()
+    {
+        // Arrange
+        var author = new Author { Id = 1, Name = "Author 1" };
+        var genre = new Genre { Id = 1, Name = "Fiction" };
+        var books = new List<Book>
+        {
+            new Book 
+            { 
+                Id = 1, 
+                Title = "Fantasy Novel", 
+                Author = author, 
+                Genre = genre, 
+                AuthorId = author.Id, 
+                GenreId = genre.Id,
+                Price = 19.99m,
+                QuantityAvailable = 10
+            }
+        };
+        
+        _mockRepository.Setup(r => r.FindAsync(
+            It.IsAny<Expression<Func<Book, bool>>>(),
+            It.IsAny<Expression<Func<Book, object>>>(),
+            It.IsAny<Expression<Func<Book, object>>>()))
+            .ReturnsAsync(books);
+
+        // Act
+        var result = await _service.SearchAsync("Fantasy", "Author", "Fiction");
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("Fantasy Novel", result[0].Title);
+        _mockRepository.Verify(r => r.FindAsync(
+            It.IsAny<Expression<Func<Book, bool>>>(),
+            It.IsAny<Expression<Func<Book, object>>>(),
+            It.IsAny<Expression<Func<Book, object>>>()
+        ), Times.Once);
+    }
+
+    [Fact]
+    public async Task AddAsync_ValidBook_ReturnsId()
+    {
+        // Arrange
+        var dto = new BookCreateDto 
+        { 
+            Title = "New Book", 
+            AuthorId = 1, 
+            GenreId = 1, 
+            Price = 15.99m,
+            QuantityAvailable = 20
+        };
+        
+        Book savedBook = null;
+        
+        _mockRepository.Setup(r => r.AddAsync(It.IsAny<Book>()))
+            .Callback<Book>(b => 
+            { 
+                b.Id = 10; // Simulate DB setting Id
+                savedBook = b;
+            })
+            .Returns(Task.CompletedTask);
+        
+        _mockRepository.Setup(r => r.SaveChangesAsync())
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _service.AddAsync(dto);
+
+        // Assert
+        Assert.Equal(10, result);
+        Assert.NotNull(savedBook);
+        Assert.Equal("New Book", savedBook.Title);
+        Assert.Equal(1, savedBook.AuthorId);
+        Assert.Equal(1, savedBook.GenreId);
+        Assert.Equal(15.99m, savedBook.Price);
+        Assert.Equal(20, savedBook.QuantityAvailable);
+        _mockRepository.Verify(r => r.AddAsync(It.IsAny<Book>()), Times.Once);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_ExistingBook_UpdatesBook()
+    {
+        // Arrange
+        var book = new Book 
+        { 
+            Id = 1, 
+            Title = "Original Title",
+            AuthorId = 1,
+            GenreId = 1,
+            Price = 10.99m,
+            QuantityAvailable = 5
+        };
+        
+        var dto = new BookUpdateDto 
+        { 
+            Title = "Updated Title",
+            AuthorId = 2,
+            GenreId = 2,
+            Price = 12.99m,
+            QuantityAvailable = 10
+        };
+        
+        _mockRepository.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(book);
+        _mockRepository.Setup(r => r.Update(It.IsAny<Book>()));
+        _mockRepository.Setup(r => r.SaveChangesAsync()).Returns(Task.CompletedTask);
+
+        // Act
+        await _service.UpdateAsync(1, dto);
+
+        // Assert
+        Assert.Equal("Updated Title", book.Title);
+        Assert.Equal(2, book.AuthorId);
+        Assert.Equal(2, book.GenreId);
+        Assert.Equal(12.99m, book.Price);
+        Assert.Equal(10, book.QuantityAvailable);
+        _mockRepository.Verify(r => r.GetByIdAsync(1), Times.Once);
+        _mockRepository.Verify(r => r.Update(book), Times.Once);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_NonExistingBook_ThrowsNotFoundException()
+    {
+        // Arrange
+        var dto = new BookUpdateDto 
+        { 
+            Title = "Updated Title",
+            AuthorId = 2,
+            GenreId = 2,
+            Price = 12.99m,
+            QuantityAvailable = 10
+        };
+        
+        _mockRepository.Setup(r => r.GetByIdAsync(99)).ReturnsAsync((Book)null);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<NotFoundException>(() => _service.UpdateAsync(99, dto));
+        _mockRepository.Verify(r => r.GetByIdAsync(99), Times.Once);
+        _mockRepository.Verify(r => r.Update(It.IsAny<Book>()), Times.Never);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_ExistingBook_DeletesBook()
+    {
+        // Arrange
+        var book = new Book { Id = 1, Title = "Book 1" };
+        _mockRepository.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(book);
+        _mockRepository.Setup(r => r.Delete(It.IsAny<Book>()));
+        _mockRepository.Setup(r => r.SaveChangesAsync()).Returns(Task.CompletedTask);
+
+        // Act
+        await _service.DeleteAsync(1);
+
+        // Assert
+        _mockRepository.Verify(r => r.GetByIdAsync(1), Times.Once);
+        _mockRepository.Verify(r => r.Delete(book), Times.Once);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_NonExistingBook_ThrowsNotFoundException()
+    {
+        // Arrange
+        _mockRepository.Setup(r => r.GetByIdAsync(99)).ReturnsAsync((Book)null);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<NotFoundException>(() => _service.DeleteAsync(99));
+        _mockRepository.Verify(r => r.GetByIdAsync(99), Times.Once);
+        _mockRepository.Verify(r => r.Delete(It.IsAny<Book>()), Times.Never);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Never);
+    }
+}
+
+```
+
+I've created comprehensive unit tests for all three services (AuthorService, GenreService, and BookService) using xUnit and Moq. The tests follow the naming pattern you requested: MethodName_[Condition_]Returns/Throws... Each test file includes:
+
+1. Constructor tests to ensure dependencies are properly validated
+2. Tests for all service methods (GetAllAsync, GetByIdAsync, AddAsync, etc.)
+3. Testing of both successful scenarios and error conditions
+4. Verification of repository calls through Moq
+
+Key points about these tests:
+
+- Each test setup includes mocking the repository behavior
+- Tests verify both return values and side effects (like entity modifications)
+- Error cases confirm proper exceptions are thrown
+- All mock verifications ensure methods are called the correct number of times
+- The BookService tests handle the more complex include expressions and search criteria
+
+For the AddAsync tests, I've used a callback to simulate the database setting the ID, which allows testing the ID return value. The tests also verify that changes are saved to the database by checking that SaveChangesAsync is called.
+
+These test suites provide good coverage of your service classes, ensuring they behave as expected under various conditions.
+
+
+Q: add asp.net core rest api controllers based on services: public interface IBookService
+{
+    Task<List<BookDto>> GetAllAsync();
+    Task<BookDto> GetByIdAsync(int id);
+    Task<List<BookDto>> SearchAsync(string? title, string? author, string? genre);
+    Task<int> AddAsync(BookCreateDto bookDto);
+    Task UpdateAsync(int id, BookUpdateDto bookDto);
+    Task DeleteAsync(int id);
+}
+
+public interface IGenreService
+{
+    Task<List<GenreDto>> GetAllAsync();
+    Task<GenreDto> GetByIdAsync(int id);
+    Task<int> AddAsync(GenreCreateDto dto);
+    Task UpdateAsync(int id, GenreUpdateDto dto);
+    Task DeleteAsync(int id);
+}
+
+public interface IAuthorService
+{
+    Task<List<AuthorDto>> GetAllAsync();
+    Task<AuthorDto> GetByIdAsync(int id);
+    Task<int> AddAsync(AuthorCreateDto dto);
+    Task UpdateAsync(int id, AuthorUpdateDto dto);
+    Task DeleteAsync(int id);
+}
+
+also create a base class for api controllers
+
+A: I'll create ASP.NET Core REST API controllers based on your service interfaces, along with a base controller class they can inherit from. Let me start with the base controller class and then implement each controller.
+
+```csharp
+using Microsoft.AspNetCore.Mvc;
+using System.Threading.Tasks;
+
+namespace YourNamespace.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public abstract class BaseApiController : ControllerBase
+    {
+        // Common functionality can be added here
+        protected IActionResult HandleNotFound(object result, string message = "Resource not found")
+        {
+            return result == null ? NotFound(message) : Ok(result);
+        }
+    }
+
+    [ApiController]
+    [Route("api/books")]
+    public class BooksController : BaseApiController
+    {
+        private readonly IBookService _bookService;
+
+        public BooksController(IBookService bookService)
+        {
+            _bookService = bookService;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetAll()
+        {
+            var books = await _bookService.GetAllAsync();
+            return Ok(books);
+        }
+
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var book = await _bookService.GetByIdAsync(id);
+            return HandleNotFound(book);
+        }
+
+        [HttpGet("search")]
+        public async Task<IActionResult> Search([FromQuery] string? title, [FromQuery] string? author, [FromQuery] string? genre)
+        {
+            var books = await _bookService.SearchAsync(title, author, genre);
+            return Ok(books);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] BookCreateDto bookDto)
+        {
+            var id = await _bookService.AddAsync(bookDto);
+            return CreatedAtAction(nameof(GetById), new { id }, null);
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update(int id, [FromBody] BookUpdateDto bookDto)
+        {
+            await _bookService.UpdateAsync(id, bookDto);
+            return NoContent();
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            await _bookService.DeleteAsync(id);
+            return NoContent();
+        }
+    }
+
+    [ApiController]
+    [Route("api/genres")]
+    public class GenresController : BaseApiController
+    {
+        private readonly IGenreService _genreService;
+
+        public GenresController(IGenreService genreService)
+        {
+            _genreService = genreService;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetAll()
+        {
+            var genres = await _genreService.GetAllAsync();
+            return Ok(genres);
+        }
+
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var genre = await _genreService.GetByIdAsync(id);
+            return HandleNotFound(genre);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] GenreCreateDto dto)
+        {
+            var id = await _genreService.AddAsync(dto);
+            return CreatedAtAction(nameof(GetById), new { id }, null);
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update(int id, [FromBody] GenreUpdateDto dto)
+        {
+            await _genreService.UpdateAsync(id, dto);
+            return NoContent();
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            await _genreService.DeleteAsync(id);
+            return NoContent();
+        }
+    }
+
+    [ApiController]
+    [Route("api/authors")]
+    public class AuthorsController : BaseApiController
+    {
+        private readonly IAuthorService _authorService;
+
+        public AuthorsController(IAuthorService authorService)
+        {
+            _authorService = authorService;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetAll()
+        {
+            var authors = await _authorService.GetAllAsync();
+            return Ok(authors);
+        }
+
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var author = await _authorService.GetByIdAsync(id);
+            return HandleNotFound(author);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] AuthorCreateDto dto)
+        {
+            var id = await _authorService.AddAsync(dto);
+            return CreatedAtAction(nameof(GetById), new { id }, null);
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update(int id, [FromBody] AuthorUpdateDto dto)
+        {
+            await _authorService.UpdateAsync(id, dto);
+            return NoContent();
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            await _authorService.DeleteAsync(id);
+            return NoContent();
+        }
+    }
+}
+
+```
+
+I've created the following components:
+
+1. **BaseApiController** - An abstract base controller class that:
+   - Includes the `[ApiController]` and `[Route]` attributes
+   - Provides a helper method for handling not found results
+   - Can be extended with other common functionality as needed
+
+2. **BooksController** - Implements CRUD operations for books:
+   - GetAll, GetById, Search, Create, Update, and Delete endpoints
+   - Maps directly to the IBookService methods
+   - Uses proper REST conventions for routing and status codes
+
+3. **GenresController** - Implements CRUD operations for genres:
+   - Similar structure to BooksController
+   - Maps to IGenreService methods
+
+4. **AuthorsController** - Implements CRUD operations for authors:
+   - Similar structure to the other controllers
+   - Maps to IAuthorService methods
+
+Each controller follows REST API best practices:
+- Proper HTTP verbs (GET, POST, PUT, DELETE)
+- Appropriate status codes (200 OK, 201 Created, 204 No Content, 404 Not Found)
+- Consistent routing patterns
+- Parameter binding with [FromBody] and [FromQuery]
+
+You can customize the namespace and add any additional functionality as needed.
+
+
+Q: using Microsoft.AspNetCore.Mvc;
+using System.Threading.Tasks;
+
+namespace YourNamespace.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public abstract class BaseApiController : ControllerBase
+    {
+        // Common functionality can be added here
+        protected IActionResult HandleNotFound(object result, string message = "Resource not found")
+        {
+            return result == null ? NotFound(message) : Ok(result);
+        }
+    }
+
+    [ApiController]
+    [Route("api/books")]
+    public class BooksController : BaseApiController
+    {
+        private readonly IBookService _bookService;
+
+        public BooksController(IBookService bookService)
+        {
+            _bookService = bookService;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetAll()
+        {
+            var books = await _bookService.GetAllAsync();
+            return Ok(books);
+        }
+
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var book = await _bookService.GetByIdAsync(id);
+            return HandleNotFound(book);
+        }
+
+        [HttpGet("search")]
+        public async Task<IActionResult> Search([FromQuery] string? title, [FromQuery] string? author, [FromQuery] string? genre)
+        {
+            var books = await _bookService.SearchAsync(title, author, genre);
+            return Ok(books);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] BookCreateDto bookDto)
+        {
+            var id = await _bookService.AddAsync(bookDto);
+            return CreatedAtAction(nameof(GetById), new { id }, null);
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update(int id, [FromBody] BookUpdateDto bookDto)
+        {
+            await _bookService.UpdateAsync(id, bookDto);
+            return NoContent();
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            await _bookService.DeleteAsync(id);
+            return NoContent();
+        }
+    }
+
+    [ApiController]
+    [Route("api/genres")]
+    public class GenresController : BaseApiController
+    {
+        private readonly IGenreService _genreService;
+
+        public GenresController(IGenreService genreService)
+        {
+            _genreService = genreService;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetAll()
+        {
+            var genres = await _genreService.GetAllAsync();
+            return Ok(genres);
+        }
+
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var genre = await _genreService.GetByIdAsync(id);
+            return HandleNotFound(genre);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] GenreCreateDto dto)
+        {
+            var id = await _genreService.AddAsync(dto);
+            return CreatedAtAction(nameof(GetById), new { id }, null);
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update(int id, [FromBody] GenreUpdateDto dto)
+        {
+            await _genreService.UpdateAsync(id, dto);
+            return NoContent();
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            await _genreService.DeleteAsync(id);
+            return NoContent();
+        }
+    }
+
+    [ApiController]
+    [Route("api/authors")]
+    public class AuthorsController : BaseApiController
+    {
+        private readonly IAuthorService _authorService;
+
+        public AuthorsController(IAuthorService authorService)
+        {
+            _authorService = authorService;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetAll()
+        {
+            var authors = await _authorService.GetAllAsync();
+            return Ok(authors);
+        }
+
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var author = await _authorService.GetByIdAsync(id);
+            return HandleNotFound(author);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] AuthorCreateDto dto)
+        {
+            var id = await _authorService.AddAsync(dto);
+            return CreatedAtAction(nameof(GetById), new { id }, null);
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update(int id, [FromBody] AuthorUpdateDto dto)
+        {
+            await _authorService.UpdateAsync(id, dto);
+            return NoContent();
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            await _authorService.DeleteAsync(id);
+            return NoContent();
+        }
+    }
+}
+
+no need to handle not found  - an exception is thrown in that case. Also, add attributes to document the endpoints for swagger
+
+A: Got it — you want to **remove the `HandleNotFound` usage** because **exceptions are thrown instead of returning null**, and you want me to **add Swagger documentation attributes** (like `[ProducesResponseType]`, `[Produces]`, and XML comments).
+
+Here’s the cleaned-up and documented version of your controllers:
+
+```csharp
+using Microsoft.AspNetCore.Mvc;
+using System.Threading.Tasks;
+
+namespace YourNamespace.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    public abstract class BaseApiController : ControllerBase
+    {
+        // Common functionality can be added here
+    }
+
+    [ApiController]
+    [Route("api/books")]
+    public class BooksController : BaseApiController
+    {
+        private readonly IBookService _bookService;
+
+        public BooksController(IBookService bookService)
+        {
+            _bookService = bookService;
+        }
+
+        /// <summary>
+        /// Get all books.
+        /// </summary>
+        [HttpGet]
+        [ProducesResponseType(typeof(IEnumerable<BookDto>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAll()
+        {
+            var books = await _bookService.GetAllAsync();
+            return Ok(books);
+        }
+
+        /// <summary>
+        /// Get a book by ID.
+        /// </summary>
+        [HttpGet("{id}")]
+        [ProducesResponseType(typeof(BookDto), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var book = await _bookService.GetByIdAsync(id);
+            return Ok(book);
+        }
+
+        /// <summary>
+        /// Search books by title, author, or genre.
+        /// </summary>
+        [HttpGet("search")]
+        [ProducesResponseType(typeof(IEnumerable<BookDto>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> Search([FromQuery] string? title, [FromQuery] string? author, [FromQuery] string? genre)
+        {
+            var books = await _bookService.SearchAsync(title, author, genre);
+            return Ok(books);
+        }
+
+        /// <summary>
+        /// Create a new book.
+        /// </summary>
+        [HttpPost]
+        [ProducesResponseType(typeof(void), StatusCodes.Status201Created)]
+        public async Task<IActionResult> Create([FromBody] BookCreateDto bookDto)
+        {
+            var id = await _bookService.AddAsync(bookDto);
+            return CreatedAtAction(nameof(GetById), new { id }, null);
+        }
+
+        /// <summary>
+        /// Update an existing book.
+        /// </summary>
+        [HttpPut("{id}")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        public async Task<IActionResult> Update(int id, [FromBody] BookUpdateDto bookDto)
+        {
+            await _bookService.UpdateAsync(id, bookDto);
+            return NoContent();
+        }
+
+        /// <summary>
+        /// Delete a book.
+        /// </summary>
+        [HttpDelete("{id}")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        public async Task<IActionResult> Delete(int id)
+        {
+            await _bookService.DeleteAsync(id);
+            return NoContent();
+        }
+    }
+
+    [ApiController]
+    [Route("api/genres")]
+    public class GenresController : BaseApiController
+    {
+        private readonly IGenreService _genreService;
+
+        public GenresController(IGenreService genreService)
+        {
+            _genreService = genreService;
+        }
+
+        /// <summary>
+        /// Get all genres.
+        /// </summary>
+        [HttpGet]
+        [ProducesResponseType(typeof(IEnumerable<GenreDto>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAll()
+        {
+            var genres = await _genreService.GetAllAsync();
+            return Ok(genres);
+        }
+
+        /// <summary>
+        /// Get a genre by ID.
+        /// </summary>
+        [HttpGet("{id}")]
+        [ProducesResponseType(typeof(GenreDto), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var genre = await _genreService.GetByIdAsync(id);
+            return Ok(genre);
+        }
+
+        /// <summary>
+        /// Create a new genre.
+        /// </summary>
+        [HttpPost]
+        [ProducesResponseType(StatusCodes.Status201Created)]
+        public async Task<IActionResult> Create([FromBody] GenreCreateDto dto)
+        {
+            var id = await _genreService.AddAsync(dto);
+            return CreatedAtAction(nameof(GetById), new { id }, null);
+        }
+
+        /// <summary>
+        /// Update an existing genre.
+        /// </summary>
+        [HttpPut("{id}")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        public async Task<IActionResult> Update(int id, [FromBody] GenreUpdateDto dto)
+        {
+            await _genreService.UpdateAsync(id, dto);
+            return NoContent();
+        }
+
+        /// <summary>
+        /// Delete a genre.
+        /// </summary>
+        [HttpDelete("{id}")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        public async Task<IActionResult> Delete(int id)
+        {
+            await _genreService.DeleteAsync(id);
+            return NoContent();
+        }
+    }
+
+    [ApiController]
+    [Route("api/authors")]
+    public class AuthorsController : BaseApiController
+    {
+        private readonly IAuthorService _authorService;
+
+        public AuthorsController(IAuthorService authorService)
+        {
+            _authorService = authorService;
+        }
+
+        /// <summary>
+        /// Get all authors.
+        /// </summary>
+        [HttpGet]
+        [ProducesResponseType(typeof(IEnumerable<AuthorDto>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAll()
+        {
+            var authors = await _authorService.GetAllAsync();
+            return Ok(authors);
+        }
+
+        /// <summary>
+        /// Get an author by ID.
+        /// </summary>
+        [HttpGet("{id}")]
+        [ProducesResponseType(typeof(AuthorDto), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var author = await _authorService.GetByIdAsync(id);
+            return Ok(author);
+        }
+
+        /// <summary>
+        /// Create a new author.
+        /// </summary>
+        [HttpPost]
+        [ProducesResponseType(StatusCodes.Status201Created)]
+        public async Task<IActionResult> Create([FromBody] AuthorCreateDto dto)
+        {
+            var id = await _authorService.AddAsync(dto);
+            return CreatedAtAction(nameof(GetById), new { id }, null);
+        }
+
+        /// <summary>
+        /// Update an existing author.
+        /// </summary>
+        [HttpPut("{id}")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        public async Task<IActionResult> Update(int id, [FromBody] AuthorUpdateDto dto)
+        {
+            await _authorService.UpdateAsync(id, dto);
+            return NoContent();
+        }
+
+        /// <summary>
+        /// Delete an author.
+        /// </summary>
+        [HttpDelete("{id}")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        public async Task<IActionResult> Delete(int id)
+        {
+            await _authorService.DeleteAsync(id);
+            return NoContent();
+        }
+    }
+}
+```
+
+---
+
+✅ **Summary of Changes:**
+- Removed `HandleNotFound`.
+- Added `[ProducesResponseType]` annotations for Swagger/OpenAPI.
+- Added `<summary>` XML comments for methods.
+- Assumed existence of `BookDto`, `GenreDto`, `AuthorDto`, etc. (you'll need to have those DTOs ready).
+- Swagger will now automatically show expected responses clearly.
+
+---
+
+Would you also like me to show you how to automatically group these endpoints in Swagger using **tags** (`[Tags("Books")]`, etc.) to make your Swagger UI cleaner? 🚀
+
+
+Q: you forgot about 400 and 404 errors
+
+A: Good catch — you're absolutely right.
+
+✅ In real APIs, especially when documenting with Swagger/OpenAPI, you **should also document possible `400 BadRequest`, `404 NotFound`, and `500 InternalServerError` responses**, even if those are thrown via exceptions.
+
+Even though exceptions are middleware-handled (e.g., by `UseExceptionHandler`, `ProblemDetails`, etc.), Swagger expects **explicit documentation** using `[ProducesResponseType]`.
+
+---
+
+Here’s the **corrected** pattern for your endpoints — **documenting 200/201, 400, 404, and 500 responses**.
+
+I'll show one controller completely (**BooksController**), and you can apply similarly to Authors and Genres:
+
+```csharp
+using Microsoft.AspNetCore.Mvc;
+using System.Threading.Tasks;
+
+namespace YourNamespace.Controllers
+{
+    [ApiController]
+    [Route("api/books")]
+    public class BooksController : BaseApiController
+    {
+        private readonly IBookService _bookService;
+
+        public BooksController(IBookService bookService)
+        {
+            _bookService = bookService;
+        }
+
+        /// <summary>
+        /// Get all books.
+        /// </summary>
+        [HttpGet]
+        [ProducesResponseType(typeof(IEnumerable<BookDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<IActionResult> GetAll()
+        {
+            var books = await _bookService.GetAllAsync();
+            return Ok(books);
+        }
+
+        /// <summary>
+        /// Get a book by ID.
+        /// </summary>
+        [HttpGet("{id}")]
+        [ProducesResponseType(typeof(BookDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var book = await _bookService.GetByIdAsync(id);
+            return Ok(book);
+        }
+
+        /// <summary>
+        /// Search books by title, author, or genre.
+        /// </summary>
+        [HttpGet("search")]
+        [ProducesResponseType(typeof(IEnumerable<BookDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<IActionResult> Search([FromQuery] string? title, [FromQuery] string? author, [FromQuery] string? genre)
+        {
+            var books = await _bookService.SearchAsync(title, author, genre);
+            return Ok(books);
+        }
+
+        /// <summary>
+        /// Create a new book.
+        /// </summary>
+        [HttpPost]
+        [ProducesResponseType(typeof(void), StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<IActionResult> Create([FromBody] BookCreateDto bookDto)
+        {
+            var id = await _bookService.AddAsync(bookDto);
+            return CreatedAtAction(nameof(GetById), new { id }, null);
+        }
+
+        /// <summary>
+        /// Update an existing book.
+        /// </summary>
+        [HttpPut("{id}")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<IActionResult> Update(int id, [FromBody] BookUpdateDto bookDto)
+        {
+            await _bookService.UpdateAsync(id, bookDto);
+            return NoContent();
+        }
+
+        /// <summary>
+        /// Delete a book.
+        /// </summary>
+        [HttpDelete("{id}")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<IActionResult> Delete(int id)
+        {
+            await _bookService.DeleteAsync(id);
+            return NoContent();
+        }
+    }
+}
+```
+
+---
+
+### ✅ Now each endpoint properly documents:
+- **200 OK** (or 201 Created, 204 No Content),
+- **400 Bad Request** (for invalid input, model validation errors),
+- **404 Not Found** (when item doesn't exist),
+- **500 Internal Server Error** (general server issues).
+
+---
+
+Would you also like me to give you a quick **attribute** you could apply to **reduce duplication** across controllers (so you don't have to manually copy-paste `ProducesResponseType` everywhere)?  
+(there's a way using custom attributes or a global `ProducesDefaultResponseType` setting.) 🚀  
+Would save a lot of lines in bigger projects. Interested?
+
+
+Q: 500 should be applied on baseApiController to make it global
+
+A: Exactly — that's a very smart design move.  
+You want **500 Internal Server Error** response to be **applied globally** at the **BaseApiController** level, so you don't repeat it in every action. 👍
+
+In ASP.NET Core, you can do that by applying the `[ProducesResponseType]` attribute **on the controller class** (or even better, the **base controller class** like `BaseApiController`).
+
+---
+
+Here’s how to fix it properly:
+
+```csharp
+using Microsoft.AspNetCore.Mvc;
+
+namespace YourNamespace.Controllers
+{
+    [ApiController]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)] // 👈 Applied globally
+    [Route("api/[controller]")]
+    public abstract class BaseApiController : ControllerBase
+    {
+        // Common functionality can be added here
+    }
+}
+```
+
+✅ **What this does:**
+- Now every controller that inherits from `BaseApiController` will automatically tell Swagger that a `500` error is possible.
+- No need to write `[ProducesResponseType(500)]` in every action anymore.
+
+---
+
+### Then, in your actual controllers (`BooksController`, `AuthorsController`, etc.), you only need to document **200, 201, 204, 400, 404** responses individually where appropriate.
+
+Example for an action now:
+
+```csharp
+/// <summary>
+/// Get a book by ID.
+/// </summary>
+[HttpGet("{id}")]
+[ProducesResponseType(typeof(BookDto), StatusCodes.Status200OK)]
+[ProducesResponseType(StatusCodes.Status404NotFound)]
+[ProducesResponseType(StatusCodes.Status400BadRequest)]
+public async Task<IActionResult> GetById(int id)
+{
+    var book = await _bookService.GetByIdAsync(id);
+    return Ok(book);
+}
+```
+
+See? **No more `500` here**, it is inherited.
+
+---
+
+# 🚀 Summary of Changes:
+
+| Before | After |
+|:---|:---|
+| `500` documented manually on each action | `500` documented once globally in `BaseApiController` |
+
+---
+
+Would you also want me to show you how to **globally document 400 BadRequest** for invalid models (if you are using `[ApiController]` automatic validation)?  
+There’s a clean shortcut for that too if you want Swagger to document it without manually tagging every endpoint. 🎯  
+Should I show you?
+
+
+Q: add unit tests for each controller please. note that I added these checks in the constructors: _authorService = authorService ?? throw new ArgumentNullException(nameof(authorService));
+ 
+example tests:  
+
+public class BookServiceTests
+{
+    private readonly Mock<IRepository<Book>> _mockRepository;
+    private readonly BookService _service;
+
+    public BookServiceTests()
+    {
+        _mockRepository = new Mock<IRepository<Book>>();
+        _service = new BookService(_mockRepository.Object);
+    }
+
+    [Fact]
+    public void Constructor_NullRepository_ThrowsArgumentNullException()
+    {
+        // Act & Assert
+        Assert.Throws<ArgumentNullException>(() => new BookService(null!));
+    }
+
+    [Fact]
+    public async Task GetAllAsync_ReturnsAllBooks()
+    {
+        // Arrange
+        var author = new Author { Id = 1, Name = "Author 1" };
+        var genre = new Genre { Id = 1, Name = "Fiction" };
+        var expectedBooks = new List<Book>
+        {
+            new Book
+            {
+                Id = 1,
+                Title = "Book 1",
+                Author = author,
+                Genre = genre,
+                AuthorId = author.Id,
+                GenreId = genre.Id,
+                Price = 19.99m,
+                QuantityAvailable = 10
+            },
+            new Book
+            {
+                Id = 2,
+                Title = "Book 2",
+                Author = author,
+                Genre = genre,
+                AuthorId = author.Id,
+                GenreId = genre.Id,
+                Price = 29.99m,
+                QuantityAvailable = 5
+            }
+        };
+
+        _mockRepository.Setup(r => r.GetAllAsync(
+            It.IsAny<Expression<Func<Book, object>>>(),
+            It.IsAny<Expression<Func<Book, object>>>()))
+            .ReturnsAsync(expectedBooks);
+
+        // Act
+        var result = await _service.GetAllAsync();
+
+        // Assert
+        Assert.Equal(expectedBooks.Count, result.Count);
+        Assert.Equal(expectedBooks[0].Title, result[0].Title);
+        Assert.Equal(expectedBooks[1].Title, result[1].Title);
+        Assert.Equal(author.Name, result[0].AuthorName);
+        Assert.Equal(genre.Name, result[0].GenreName);
+
+        _mockRepository.Verify(r => r.GetAllAsync(
+            It.IsAny<Expression<Func<Book, object>>>(),
+            It.IsAny<Expression<Func<Book, object>>>()
+        ), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_ExistingId_ReturnsBook()
+    {
+        // Arrange
+        const int bookId = 1;
+        var author = new Author { Id = 1, Name = "Author 1" };
+        var genre = new Genre { Id = 1, Name = "Fiction" };
+        var expectedBook = new Book
+        {
+            Id = bookId,
+            Title = "Book 1",
+            Author = author,
+            Genre = genre,
+            AuthorId = author.Id,
+            GenreId = genre.Id,
+            Price = 19.99m,
+            QuantityAvailable = 10
+        };
+
+        _mockRepository.Setup(r => r.GetByIdAsync(
+            bookId,
+            It.IsAny<Expression<Func<Book, object>>>(),
+            It.IsAny<Expression<Func<Book, object>>>()))
+            .ReturnsAsync(expectedBook);
+
+        // Act
+        var result = await _service.GetByIdAsync(bookId);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(expectedBook.Id, result.Id);
+        Assert.Equal(expectedBook.Title, result.Title);
+        Assert.Equal(author.Name, result.AuthorName);
+        Assert.Equal(genre.Name, result.GenreName);
+        Assert.Equal(expectedBook.Price, result.Price);
+
+        _mockRepository.Verify(r => r.GetByIdAsync(
+            bookId,
+            It.IsAny<Expression<Func<Book, object>>>(),
+            It.IsAny<Expression<Func<Book, object>>>()
+        ), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_NonExistingId_ThrowsNotFoundException()
+    {
+        // Arrange
+        const int nonExistingId = 99;
+
+        _mockRepository.Setup(r => r.GetByIdAsync(
+            nonExistingId,
+            It.IsAny<Expression<Func<Book, object>>>(),
+            It.IsAny<Expression<Func<Book, object>>>()))
+            .ReturnsAsync((Book)null!);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<NotFoundException>(() => _service.GetByIdAsync(nonExistingId));
+
+        _mockRepository.Verify(r => r.GetByIdAsync(
+            nonExistingId,
+            It.IsAny<Expression<Func<Book, object>>>(),
+            It.IsAny<Expression<Func<Book, object>>>()
+        ), Times.Once);
+    }
+
+    [Fact]
+    public async Task SearchAsync_WithCriteria_ReturnsMatchingBooks()
+    {
+        // Arrange
+        const string searchTitle = "Fantasy";
+        const string searchAuthor = "Author";
+        const string searchGenre = "Fiction";
+
+        var author = new Author { Id = 1, Name = "Author 1" };
+        var genre = new Genre { Id = 1, Name = "Fiction" };
+        var expectedBooks = new List<Book>
+        {
+            new Book
+            {
+                Id = 1,
+                Title = "Fantasy Novel",
+                Author = author,
+                Genre = genre,
+                AuthorId = author.Id,
+                GenreId = genre.Id,
+                Price = 19.99m,
+                QuantityAvailable = 10
+            }
+        };
+
+        _mockRepository.Setup(r => r.FindAsync(
+            It.IsAny<Expression<Func<Book, bool>>>(),
+            It.IsAny<Expression<Func<Book, object>>>(),
+            It.IsAny<Expression<Func<Book, object>>>()))
+            .ReturnsAsync(expectedBooks);
+
+        // Act
+        var result = await _service.SearchAsync(searchTitle, searchAuthor, searchGenre);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal(expectedBooks[0].Title, result[0].Title);
+
+        _mockRepository.Verify(r => r.FindAsync(
+            It.IsAny<Expression<Func<Book, bool>>>(),
+            It.IsAny<Expression<Func<Book, object>>>(),
+            It.IsAny<Expression<Func<Book, object>>>()
+        ), Times.Once);
+    }
+
+    [Fact]
+    public async Task AddAsync_ValidBook_ReturnsId()
+    {
+        // Arrange
+        const int expectedId = 10;
+        var dto = new BookCreateDto
+        {
+            Title = "New Book",
+            AuthorId = 1,
+            GenreId = 1,
+            Price = 15.99m,
+            QuantityAvailable = 20
+        };
+
+        Book savedBook = null!;
+
+        _mockRepository.Setup(r => r.AddAsync(It.IsAny<Book>()))
+            .Callback<Book>(b =>
+            {
+                b.Id = expectedId; // Simulate DB setting Id
+                savedBook = b;
+            })
+            .Returns(Task.CompletedTask);
+
+        _mockRepository.Setup(r => r.SaveChangesAsync())
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _service.AddAsync(dto);
+
+        // Assert
+        Assert.Equal(expectedId, result);
+        Assert.NotNull(savedBook);
+        Assert.Equal(dto.Title, savedBook.Title);
+        Assert.Equal(dto.AuthorId, savedBook.AuthorId);
+        Assert.Equal(dto.GenreId, savedBook.GenreId);
+        Assert.Equal(dto.Price, savedBook.Price);
+        Assert.Equal(dto.QuantityAvailable, savedBook.QuantityAvailable);
+
+        _mockRepository.Verify(r => r.AddAsync(It.IsAny<Book>()), Times.Once);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_ExistingBook_UpdatesBook()
+    {
+        // Arrange
+        const int bookId = 1;
+        var book = new Book
+        {
+            Id = bookId,
+            Title = "Original Title",
+            AuthorId = 1,
+            GenreId = 1,
+            Price = 10.99m,
+            QuantityAvailable = 5
+        };
+
+        var dto = new BookUpdateDto
+        {
+            Title = "Updated Title",
+            AuthorId = 2,
+            GenreId = 2,
+            Price = 12.99m,
+            QuantityAvailable = 10
+        };
+
+        _mockRepository.Setup(r => r.GetByIdAsync(bookId)).ReturnsAsync(book);
+        _mockRepository.Setup(r => r.Update(It.IsAny<Book>()));
+        _mockRepository.Setup(r => r.SaveChangesAsync()).Returns(Task.CompletedTask);
+
+        // Act
+        await _service.UpdateAsync(bookId, dto);
+
+        // Assert
+        Assert.Equal(dto.Title, book.Title);
+        Assert.Equal(dto.AuthorId, book.AuthorId);
+        Assert.Equal(dto.GenreId, book.GenreId);
+        Assert.Equal(dto.Price, book.Price);
+        Assert.Equal(dto.QuantityAvailable, book.QuantityAvailable);
+
+        _mockRepository.Verify(r => r.GetByIdAsync(bookId), Times.Once);
+        _mockRepository.Verify(r => r.Update(book), Times.Once);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_NonExistingBook_ThrowsNotFoundException()
+    {
+        // Arrange
+        const int nonExistingId = 99;
+        var dto = new BookUpdateDto
+        {
+            Title = "Updated Title",
+            AuthorId = 2,
+            GenreId = 2,
+            Price = 12.99m,
+            QuantityAvailable = 10
+        };
+
+        _mockRepository.Setup(r => r.GetByIdAsync(nonExistingId)).ReturnsAsync((Book)null!);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<NotFoundException>(() => _service.UpdateAsync(nonExistingId, dto));
+
+        _mockRepository.Verify(r => r.GetByIdAsync(nonExistingId), Times.Once);
+        _mockRepository.Verify(r => r.Update(It.IsAny<Book>()), Times.Never);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_ExistingBook_DeletesBook()
+    {
+        // Arrange
+        const int bookId = 1;
+        var book = new Book { Id = bookId, Title = "Book 1" };
+
+        _mockRepository.Setup(r => r.GetByIdAsync(bookId)).ReturnsAsync(book);
+        _mockRepository.Setup(r => r.Delete(It.IsAny<Book>()));
+        _mockRepository.Setup(r => r.SaveChangesAsync()).Returns(Task.CompletedTask);
+
+        // Act
+        await _service.DeleteAsync(bookId);
+
+        // Assert
+        _mockRepository.Verify(r => r.GetByIdAsync(bookId), Times.Once);
+        _mockRepository.Verify(r => r.Delete(book), Times.Once);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_NonExistingBook_ThrowsNotFoundException()
+    {
+        // Arrange
+        const int nonExistingId = 99;
+
+        _mockRepository.Setup(r => r.GetByIdAsync(nonExistingId)).ReturnsAsync((Book)null!);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<NotFoundException>(() => _service.DeleteAsync(nonExistingId));
+
+        _mockRepository.Verify(r => r.GetByIdAsync(nonExistingId), Times.Once);
+        _mockRepository.Verify(r => r.Delete(It.IsAny<Book>()), Times.Never);
+        _mockRepository.Verify(r => r.SaveChangesAsync(), Times.Never);
+    }
+}
+
+A: Perfect, you gave me **very detailed** unit tests for services (BookServiceTests)!  
+Now you want **similar unit tests but for your Controllers** —  
+following the same clean style + checking for constructor null checks.
+
+✅ I'll generate unit tests for:
+- **BooksController**
+- **GenresController**
+- **AuthorsController**
+
+**Key rules:**  
+- Each controller constructor throws `ArgumentNullException` when service is `null`.
+- Test main actions (GetAll, GetById, Search, Create, Update, Delete).
+- Use **Moq** and **xUnit**.
+- Light, focused tests — no XML comments.
+
+---
+
+# 📦 Example: `BooksControllerTests`
+
+```csharp
+using Xunit;
+using Moq;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
+
+namespace YourNamespace.Tests.Controllers
+{
+    public class BooksControllerTests
+    {
+        private readonly Mock<IBookService> _mockService;
+        private readonly BooksController _controller;
+
+        public BooksControllerTests()
+        {
+            _mockService = new Mock<IBookService>();
+            _controller = new BooksController(_mockService.Object);
+        }
+
+        [Fact]
+        public void Constructor_NullService_ThrowsArgumentNullException()
+        {
+            Assert.Throws<ArgumentNullException>(() => new BooksController(null!));
+        }
+
+        [Fact]
+        public async Task GetAll_ReturnsOkResult_WithListOfBooks()
+        {
+            _mockService.Setup(s => s.GetAllAsync()).ReturnsAsync(new List<BookDto>());
+
+            var result = await _controller.GetAll();
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            Assert.IsType<List<BookDto>>(okResult.Value);
+        }
+
+        [Fact]
+        public async Task GetById_ExistingId_ReturnsOkResult()
+        {
+            _mockService.Setup(s => s.GetByIdAsync(1)).ReturnsAsync(new BookDto());
+
+            var result = await _controller.GetById(1);
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            Assert.IsType<BookDto>(okResult.Value);
+        }
+
+        [Fact]
+        public async Task Search_ReturnsOkResult()
+        {
+            _mockService.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+                        .ReturnsAsync(new List<BookDto>());
+
+            var result = await _controller.Search("title", "author", "genre");
+
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            Assert.IsType<List<BookDto>>(okResult.Value);
+        }
+
+        [Fact]
+        public async Task Create_ValidBook_ReturnsCreatedAtAction()
+        {
+            _mockService.Setup(s => s.AddAsync(It.IsAny<BookCreateDto>())).ReturnsAsync(1);
+
+            var result = await _controller.Create(new BookCreateDto());
+
+            var createdResult = Assert.IsType<CreatedAtActionResult>(result);
+            Assert.Equal(nameof(_controller.GetById), createdResult.ActionName);
+        }
+
+        [Fact]
+        public async Task Update_ValidIdAndBook_ReturnsNoContent()
+        {
+            var result = await _controller.Update(1, new BookUpdateDto());
+
+            Assert.IsType<NoContentResult>(result);
+        }
+
+        [Fact]
+        public async Task Delete_ExistingId_ReturnsNoContent()
+        {
+            var result = await _controller.Delete(1);
+
+            Assert.IsType<NoContentResult>(result);
+        }
+    }
+}
+```
+
+---
+
+# 📦 Similarly: `GenresControllerTests`
+
+```csharp
+public class GenresControllerTests
+{
+    private readonly Mock<IGenreService> _mockService;
+    private readonly GenresController _controller;
+
+    public GenresControllerTests()
+    {
+        _mockService = new Mock<IGenreService>();
+        _controller = new GenresController(_mockService.Object);
+    }
+
+    [Fact]
+    public void Constructor_NullService_ThrowsArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(() => new GenresController(null!));
+    }
+
+    [Fact]
+    public async Task GetAll_ReturnsOkResult()
+    {
+        _mockService.Setup(s => s.GetAllAsync()).ReturnsAsync(new List<GenreDto>());
+
+        var result = await _controller.GetAll();
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.IsType<List<GenreDto>>(okResult.Value);
+    }
+
+    [Fact]
+    public async Task GetById_ExistingId_ReturnsOkResult()
+    {
+        _mockService.Setup(s => s.GetByIdAsync(1)).ReturnsAsync(new GenreDto());
+
+        var result = await _controller.GetById(1);
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.IsType<GenreDto>(okResult.Value);
+    }
+
+    [Fact]
+    public async Task Create_ValidGenre_ReturnsCreatedAtAction()
+    {
+        _mockService.Setup(s => s.AddAsync(It.IsAny<GenreCreateDto>())).ReturnsAsync(1);
+
+        var result = await _controller.Create(new GenreCreateDto());
+
+        var createdResult = Assert.IsType<CreatedAtActionResult>(result);
+        Assert.Equal(nameof(_controller.GetById), createdResult.ActionName);
+    }
+
+    [Fact]
+    public async Task Update_ValidId_ReturnsNoContent()
+    {
+        var result = await _controller.Update(1, new GenreUpdateDto());
+
+        Assert.IsType<NoContentResult>(result);
+    }
+
+    [Fact]
+    public async Task Delete_ExistingId_ReturnsNoContent()
+    {
+        var result = await _controller.Delete(1);
+
+        Assert.IsType<NoContentResult>(result);
+    }
+}
+```
+
+---
+
+# 📦 And finally: `AuthorsControllerTests`
+
+```csharp
+public class AuthorsControllerTests
+{
+    private readonly Mock<IAuthorService> _mockService;
+    private readonly AuthorsController _controller;
+
+    public AuthorsControllerTests()
+    {
+        _mockService = new Mock<IAuthorService>();
+        _controller = new AuthorsController(_mockService.Object);
+    }
+
+    [Fact]
+    public void Constructor_NullService_ThrowsArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(() => new AuthorsController(null!));
+    }
+
+    [Fact]
+    public async Task GetAll_ReturnsOkResult()
+    {
+        _mockService.Setup(s => s.GetAllAsync()).ReturnsAsync(new List<AuthorDto>());
+
+        var result = await _controller.GetAll();
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.IsType<List<AuthorDto>>(okResult.Value);
+    }
+
+    [Fact]
+    public async Task GetById_ExistingId_ReturnsOkResult()
+    {
+        _mockService.Setup(s => s.GetByIdAsync(1)).ReturnsAsync(new AuthorDto());
+
+        var result = await _controller.GetById(1);
+
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.IsType<AuthorDto>(okResult.Value);
+    }
+
+    [Fact]
+    public async Task Create_ValidAuthor_ReturnsCreatedAtAction()
+    {
+        _mockService.Setup(s => s.AddAsync(It.IsAny<AuthorCreateDto>())).ReturnsAsync(1);
+
+        var result = await _controller.Create(new AuthorCreateDto());
+
+        var createdResult = Assert.IsType<CreatedAtActionResult>(result);
+        Assert.Equal(nameof(_controller.GetById), createdResult.ActionName);
+    }
+
+    [Fact]
+    public async Task Update_ValidId_ReturnsNoContent()
+    {
+        var result = await _controller.Update(1, new AuthorUpdateDto());
+
+        Assert.IsType<NoContentResult>(result);
+    }
+
+    [Fact]
+    public async Task Delete_ExistingId_ReturnsNoContent()
+    {
+        var result = await _controller.Delete(1);
+
+        Assert.IsType<NoContentResult>(result);
+    }
+}
+```
+
+---
+
+# ✨ Recap
+
+- All Controllers have **constructor null checks** ✅
+- All public methods tested (GetAll, GetById, Create, Update, Delete, Search) ✅
+- Mocked services, returning minimal data just for structure ✅
+- No XML comments or unnecessary bloat ✅
+
+---
+
+Would you also like me to show you how to group them nicely under a `Controllers/` folder with a `Tests/Controllers/` project structure (example `.csproj` too)? 🚀  
+This would make it even production-grade!  
+Want me to?
+
+
+Q: create a global exception handler. It should also be able to handle this type of exception: public class NotFoundException : Exception
+{
+    public NotFoundException(string message) 
+        : base(message) { }
+}
+
+
+A: Got it —  
+You want a **global exception handler** (middleware) that will:
+- Catch **all unhandled exceptions**,
+- Catch specifically **NotFoundException**,
+- Return a **proper HTTP response** with:
+  - 404 for `NotFoundException`
+  - 400 for `ValidationException` (if needed later)
+  - 500 for all other exceptions.
+
+✅ I'll create clean production-ready code without comments and keep it easy to expand later.
+
+---
+
+# 📄 `GlobalExceptionMiddleware.cs`
+
+```csharp
+using Microsoft.AspNetCore.Http;
+using System.Net;
+using System.Text.Json;
+using System.Threading.Tasks;
+
+public class GlobalExceptionMiddleware
+{
+    private readonly RequestDelegate _next;
+
+    public GlobalExceptionMiddleware(RequestDelegate next)
+    {
+        _next = next;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        try
+        {
+            await _next(context);
+        }
+        catch (Exception ex)
+        {
+            await HandleGlobalExceptionAsync(context, ex);
+        }
+    }
+
+    private static async Task HandleGlobalExceptionAsync(HttpContext context, Exception exception)
+    {
+        context.Response.ContentType = "application/json";
+
+        context.Response.StatusCode = exception switch
+        {
+            NotFoundException => (int)HttpStatusCode.NotFound,
+            ArgumentException => (int)HttpStatusCode.BadRequest,
+            _ => (int)HttpStatusCode.InternalServerError
+        };
+
+        var response = new
+        {
+            StatusCode = context.Response.StatusCode,
+            Message = exception.Message
+        };
+
+        await context.Response.WriteAsync(JsonSerializer.Serialize(response));
+    }
+}
+```
+
+---
+
+# 📄 `ExceptionMiddlewareExtensions.cs`
+
+This allows easy `.UseGlobalExceptionMiddleware()` in `Program.cs`.
+
+```csharp
+using Microsoft.AspNetCore.Builder;
+
+public static class ExceptionMiddlewareExtensions
+{
+    public static IApplicationBuilder UseGlobalExceptionMiddleware(this IApplicationBuilder builder)
+    {
+        return builder.UseMiddleware<GlobalExceptionMiddleware>();
+    }
+}
+```
+
+---
+
+# 🛠 How to use it
+
+In your `Program.cs` or `Startup.cs`, add:
+
+```csharp
+app.UseGlobalExceptionMiddleware();
+```
+
+Make sure it goes **early** in the middleware pipeline (right after `app.UseRouting()` but before anything like authentication/authorization if you have it).
+
+---
+
+# 🌟 Bonus (example of `NotFoundException`)
+
+```csharp
+public class NotFoundException : Exception
+{
+    public NotFoundException(string message) : base(message) { }
+}
+```
+✅ Already compatible.
+
+---
+
+# 🧠 Result:
+| Exception type         | HTTP Status Code |  
+|:------------------------|:----------------:|  
+| `NotFoundException`     | 404 (Not Found)   |  
+| `ArgumentException`     | 400 (Bad Request) |  
+| Any other `Exception`   | 500 (Server Error)|  
+
+---
+
+Would you also like me to show a **better JSON structure** (like `errorCode`, `errorDetails`, timestamps) if you want it even more API-friendly? 🚀  
+(Example: standardized JSON error responses)  
+Let me know!
+
+
+Q: the message should only the set to the value of the exception message if it is a custom exception
+
+A: Got it! So you want the message to only be set to the exception message if it is a **custom exception** (e.g., `NotFoundException`), and for any other unhandled exceptions, we’ll provide a **generic message**.
+
+Let’s update the `GlobalExceptionMiddleware` to reflect this change.
+
+---
+
+### Updated `GlobalExceptionMiddleware.cs`
+
+```csharp
+using Microsoft.AspNetCore.Http;
+using System.Net;
+using System.Text.Json;
+using System.Threading.Tasks;
+
+public class GlobalExceptionMiddleware
+{
+    private readonly RequestDelegate _next;
+
+    public GlobalExceptionMiddleware(RequestDelegate next)
+    {
+        _next = next;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        try
+        {
+            await _next(context);
+        }
+        catch (Exception ex)
+        {
+            await HandleGlobalExceptionAsync(context, ex);
+        }
+    }
+
+    private static async Task HandleGlobalExceptionAsync(HttpContext context, Exception exception)
+    {
+        context.Response.ContentType = "application/json";
+
+        // Set status code depending on exception type
+        context.Response.StatusCode = exception switch
+        {
+            NotFoundException => (int)HttpStatusCode.NotFound,
+            ArgumentException => (int)HttpStatusCode.BadRequest,
+            _ => (int)HttpStatusCode.InternalServerError
+        };
+
+        var response = new
+        {
+            StatusCode = context.Response.StatusCode,
+            // Custom message for custom exceptions, otherwise a generic message
+            Message = exception switch
+            {
+                NotFoundException notFoundException => notFoundException.Message,
+                ArgumentException argumentException => argumentException.Message,
+                _ => "An unexpected error occurred. Please try again later."
+            }
+        };
+
+        await context.Response.WriteAsync(JsonSerializer.Serialize(response));
+    }
+}
+```
+
+---
+
+### Explanation of Changes:
+1. **Custom exception handling**: For `NotFoundException` (and `ArgumentException` as an example), the message will be the value of the exception's message.
+2. **Generic message**: For all other exceptions (e.g., internal server errors), a **generic message** (`"An unexpected error occurred. Please try again later."`) is used instead of the exception message.
+
+### Example of responses:
+- For a `NotFoundException`:
+    ```json
+    {
+      "StatusCode": 404,
+      "Message": "The requested resource was not found."
+    }
+    ```
+
+- For an **unhandled exception**:
+    ```json
+    {
+      "StatusCode": 500,
+      "Message": "An unexpected error occurred. Please try again later."
+    }
+    ```
+
+---
+
+This ensures your error handling is more controlled and secure by not exposing sensitive internal exception messages in production.
+
+
+Q: let's create a base class for these types of exceptions
+
+A: To streamline exception handling and ensure that all custom exceptions have a consistent structure, we can create a **base class** for custom exceptions. This way, you can easily extend it for other exception types like `NotFoundException` or any other domain-specific exceptions you might create.
+
+Let’s create a `BaseException` class, and then extend it for specific exceptions like `NotFoundException`.
+
+### Step 1: Create `BaseException` Class
+
+We'll create a base class that other exceptions can inherit from. This class will provide a default message, and you can override it in subclasses for custom behavior.
+
+```csharp
+using System;
+
+public abstract class BaseException : Exception
+{
+    public int StatusCode { get; }
+    public string ErrorCode { get; }
+
+    protected BaseException(string message, int statusCode, string errorCode = "") 
+        : base(message)
+    {
+        StatusCode = statusCode;
+        ErrorCode = errorCode;
+    }
+}
+```
+
+### Step 2: Update `NotFoundException` to Inherit from `BaseException`
+
+Now that we have a base class, we can update `NotFoundException` to inherit from `BaseException`. This will allow you to reuse the exception structure across different custom exceptions.
+
+```csharp
+public class NotFoundException : BaseException
+{
+    public NotFoundException(string message)
+        : base(message, 404) // Status code 404 for Not Found
+    {
+    }
+}
+```
+
+### Step 3: Update the Global Exception Handler
+
+Now that the exceptions inherit from `BaseException`, we can make the exception handler smarter by reading the `StatusCode` directly from the exception instead of hardcoding it. Additionally, we'll return the `Message` from the exception if it's a custom exception.
+
+Here’s how to update the `GlobalExceptionMiddleware`:
+
+```csharp
+using Microsoft.AspNetCore.Http;
+using System.Net;
+using System.Text.Json;
+using System.Threading.Tasks;
+
+public class GlobalExceptionMiddleware
+{
+    private readonly RequestDelegate _next;
+
+    public GlobalExceptionMiddleware(RequestDelegate next)
+    {
+        _next = next;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        try
+        {
+            await _next(context);
+        }
+        catch (Exception ex)
+        {
+            await HandleGlobalExceptionAsync(context, ex);
+        }
+    }
+
+    private static async Task HandleGlobalExceptionAsync(HttpContext context, Exception exception)
+    {
+        context.Response.ContentType = "application/json";
+
+        // Set default status code to InternalServerError (500)
+        int statusCode = (int)HttpStatusCode.InternalServerError;
+        string message = "An unexpected error occurred. Please try again later.";
+
+        if (exception is BaseException baseException)
+        {
+            // Use the custom status code and message from BaseException
+            statusCode = baseException.StatusCode;
+            message = exception.Message;
+        }
+
+        context.Response.StatusCode = statusCode;
+
+        var response = new
+        {
+            StatusCode = statusCode,
+            Message = message
+        };
+
+        await context.Response.WriteAsync(JsonSerializer.Serialize(response));
+    }
+}
+```
+
+### Step 4: Use the New Structure
+
+Now, you can use `BaseException` for any new custom exceptions that you create. For example, if you need another exception like `BadRequestException`, you can do this:
+
+```csharp
+public class BadRequestException : BaseException
+{
+    public BadRequestException(string message)
+        : base(message, 400) // Status code 400 for Bad Request
+    {
+    }
+}
+```
+
+### Benefits of This Approach:
+1. **Consistency**: All custom exceptions now have a consistent structure and behavior.
+2. **Customizable**: You can easily add more fields to the `BaseException` (e.g., `ErrorCode` or `Details`), and all subclasses will inherit these.
+3. **Centralized Handling**: The global exception handler (`GlobalExceptionMiddleware`) can easily handle all your custom exceptions without having to check for each one individually.
+
+### Example of Exception Handling:
+
+For a `NotFoundException`, the response would look like this:
+
+```json
+{
+  "StatusCode": 404,
+  "Message": "The requested resource was not found."
+}
+```
+
+For any other unhandled exception, the response would be:
+
+```json
+{
+  "StatusCode": 500,
+  "Message": "An unexpected error occurred. Please try again later."
+}
+```
+
+This structure allows you to easily add new exceptions and ensures that your API consistently returns the correct status code and message.
+
+Let me know if you'd like to extend this with more features, like custom error codes or more specific logic!
+
+
+Q: add unit tests please
+
+A: Let's add unit tests to ensure that the `BaseException`, `NotFoundException`, and the `GlobalExceptionMiddleware` work as expected. Below, I'll provide the unit tests for:
+
+1. **BaseException**: Testing that `BaseException` can be instantiated correctly and passes the right properties.
+2. **NotFoundException**: Verifying that it inherits from `BaseException` and sets the status code correctly.
+3. **GlobalExceptionMiddleware**: Verifying that the middleware handles exceptions correctly and sets the right status code and message.
+
+### Unit Test for `BaseException`
+
+For `BaseException`, we want to test that we can create an exception with a custom message, status code, and error code. Since `BaseException` is abstract, we will need a derived exception (like `NotFoundException`) to test it.
+
+```csharp
+using System;
+using Xunit;
+
+public class BaseExceptionTests
+{
+    [Fact]
+    public void Constructor_SetsPropertiesCorrectly()
+    {
+        // Arrange
+        string expectedMessage = "Test message";
+        int expectedStatusCode = 400;
+        string expectedErrorCode = "TEST_ERROR";
+
+        // Act
+        var exception = new NotFoundException(expectedMessage);
+
+        // Assert
+        Assert.Equal(expectedMessage, exception.Message);
+        Assert.Equal(expectedStatusCode, exception.StatusCode);
+        Assert.Empty(exception.ErrorCode);
+    }
+}
+```
+
+### Unit Test for `NotFoundException`
+
+Here we’ll verify that `NotFoundException` inherits from `BaseException` and sets the correct status code.
+
+```csharp
+using Xunit;
+
+public class NotFoundExceptionTests
+{
+    [Fact]
+    public void Constructor_SetsCorrectStatusCode()
+    {
+        // Arrange
+        string expectedMessage = "Resource not found";
+
+        // Act
+        var exception = new NotFoundException(expectedMessage);
+
+        // Assert
+        Assert.Equal(expectedMessage, exception.Message);
+        Assert.Equal(404, exception.StatusCode); // 404 is for NotFoundException
+    }
+}
+```
+
+### Unit Test for `GlobalExceptionMiddleware`
+
+Now, we’ll focus on testing the `GlobalExceptionMiddleware` to ensure it correctly handles exceptions and sends the right status codes and messages to the response.
+
+We’ll use `Xunit` with `Moq` to mock the HTTP context and ensure the middleware handles different exceptions properly.
+
+```csharp
+using Microsoft.AspNetCore.Http;
+using Moq;
+using System;
+using System.Threading.Tasks;
+using Xunit;
+
+public class GlobalExceptionMiddlewareTests
+{
+    private readonly Mock<RequestDelegate> _next;
+    private readonly GlobalExceptionMiddleware _middleware;
+
+    public GlobalExceptionMiddlewareTests()
+    {
+        _next = new Mock<RequestDelegate>();
+        _middleware = new GlobalExceptionMiddleware(_next.Object);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_HandlesNotFoundException_Returns404()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        var notFoundException = new NotFoundException("Resource not found");
+
+        _next.Setup(m => m(It.IsAny<HttpContext>())).Throws(notFoundException);
+
+        // Act
+        await _middleware.InvokeAsync(context);
+
+        // Assert
+        Assert.Equal(404, context.Response.StatusCode);
+        // You can also check the response body if needed
+    }
+
+    [Fact]
+    public async Task InvokeAsync_HandlesGenericException_Returns500()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        var genericException = new Exception("An unexpected error occurred");
+
+        _next.Setup(m => m(It.IsAny<HttpContext>())).Throws(genericException);
+
+        // Act
+        await _middleware.InvokeAsync(context);
+
+        // Assert
+        Assert.Equal(500, context.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_HandlesBadRequestException_Returns400()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        var badRequestException = new BadRequestException("Bad request error");
+
+        _next.Setup(m => m(It.IsAny<HttpContext>())).Throws(badRequestException);
+
+        // Act
+        await _middleware.InvokeAsync(context);
+
+        // Assert
+        Assert.Equal(400, context.Response.StatusCode);
+    }
+}
+```
+
+### Explanation of the Tests:
+
+1. **BaseExceptionTests**: This test ensures that the `BaseException` (via `NotFoundException`) is correctly initialized with a message, status code, and error code.
+2. **NotFoundExceptionTests**: This test ensures that the `NotFoundException` correctly sets the status code to `404` and properly passes the exception message.
+3. **GlobalExceptionMiddlewareTests**:
+   - **InvokeAsync_HandlesNotFoundException_Returns404**: This tests that the middleware handles a `NotFoundException` and returns a `404` status code.
+   - **InvokeAsync_HandlesGenericException_Returns500**: This tests that the middleware handles a generic exception and returns a `500` status code.
+   - **InvokeAsync_HandlesBadRequestException_Returns400**: This tests that the middleware handles a `BadRequestException` and returns a `400` status code.
+
+### Mocking `RequestDelegate`
+
+In the tests for `GlobalExceptionMiddleware`, we mock the `RequestDelegate`, which is the next middleware in the pipeline. We use `Throws()` to simulate exceptions being thrown by the next middleware, and then we check if the `GlobalExceptionMiddleware` handles them appropriately.
+
+### Additional Notes:
+
+- These tests ensure that custom exceptions are correctly handled by the global exception handler.
+- You can extend the `GlobalExceptionMiddlewareTests` with more specific test cases for different types of exceptions as needed.
+  
+Let me know if you need any further changes or adjustments!
