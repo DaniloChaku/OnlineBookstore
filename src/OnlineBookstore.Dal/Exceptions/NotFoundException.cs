@@ -1,7 +1,11 @@
-﻿namespace OnlineBookstore.Dal.Exceptions;
+﻿using System.Net;
 
-public class NotFoundException : Exception
+namespace OnlineBookstore.Dal.Exceptions;
+
+public class NotFoundException : BaseApiException
 {
-    public NotFoundException(string message) 
-        : base(message) { }
+    public NotFoundException(string message)
+            : base(message, (int)HttpStatusCode.NotFound)
+    {
+    }
 }

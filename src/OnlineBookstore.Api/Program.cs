@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using OnlineBookstore.Api.Middleware;
 using OnlineBookstore.Api.Startup;
 using OnlineBookstore.Bll.ServiceContracts;
 using OnlineBookstore.Bll.Services;
@@ -21,6 +22,8 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
+
+app.UseMiddleware<GlobalExceptionMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
