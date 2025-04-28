@@ -16,7 +16,7 @@ public class Repository<T> : IRepository<T> where T : class, IEntity
         _dbSet = context.Set<T>();
     }
 
-    public async Task<IEnumerable<T>> GetAllAsync(params Expression<Func<T, object>>[] includes)
+    public async Task<List<T>> GetAllAsync(params Expression<Func<T, object>>[] includes)
     {
         IQueryable<T> query = ApplyIncludes(includes);
         return await query.ToListAsync();
@@ -28,7 +28,7 @@ public class Repository<T> : IRepository<T> where T : class, IEntity
         return await query.FirstOrDefaultAsync(e => e.Id == id);
     }
 
-    public async Task<IEnumerable<T>> FindAsync(
+    public async Task<List<T>> FindAsync(
         Expression<Func<T, bool>> predicate,
         params Expression<Func<T, object>>[] includes)
     {
