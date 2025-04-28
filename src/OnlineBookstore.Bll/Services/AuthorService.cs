@@ -21,7 +21,7 @@ public class AuthorService : IAuthorService
         return authors.ConvertAll(MapToDto);
     }
 
-    public async Task<AuthorDto?> GetByIdAsync(int id)
+    public async Task<AuthorDto> GetByIdAsync(int id)
     {
         var author = await _authorRepository.GetByIdAsync(id);
         if (author == null)

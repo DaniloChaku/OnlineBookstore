@@ -21,13 +21,13 @@ public class GenreService : IGenreService
         return genres.ConvertAll(MapToDto);
     }
 
-    public async Task<GenreDto?> GetByIdAsync(int id)
+    public async Task<GenreDto> GetByIdAsync(int id)
     {
         var genre = await _genreRepository.GetByIdAsync(id);
         if (genre == null)
             throw new NotFoundException($"Genre with ID {id} not found");
 
-        return genre == null ? null : MapToDto(genre);
+        return MapToDto(genre);
     }
 
     public async Task<int> AddAsync(GenreCreateDto dto)

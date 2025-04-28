@@ -21,7 +21,7 @@ public class BookService : IBookService
         return books.ConvertAll(MapToDto);
     }
 
-    public async Task<BookDto?> GetByIdAsync(int id)
+    public async Task<BookDto> GetByIdAsync(int id)
     {
         var book = await _bookRepository.GetByIdAsync(id, b => b.Author, b => b.Genre);
         if (book == null)
