@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore;
 using OnlineBookstore.Dal.Entities;
+using OnlineBookstore.Dal.Constants;
 
 namespace OnlineBookstore.Dal.Data.Configurations;
 
@@ -15,7 +16,7 @@ public class BookConfiguration : IEntityTypeConfiguration<Book>
 
         builder.Property(b => b.Title)
             .IsRequired()
-            .HasMaxLength(255);
+            .HasMaxLength(ValidationConstants.BookTitleMaxLength);
 
         builder.Property(b => b.Price)
             .HasPrecision(18, 2);

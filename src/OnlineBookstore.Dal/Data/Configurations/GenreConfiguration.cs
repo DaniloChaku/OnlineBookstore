@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using OnlineBookstore.Dal.Constants;
 using OnlineBookstore.Dal.Entities;
 
 namespace OnlineBookstore.Dal.Data.Configurations;
@@ -16,6 +17,6 @@ public class GenreConfiguration : IEntityTypeConfiguration<Genre>
         builder
             .Property(g => g.Name)
             .IsRequired()
-            .HasMaxLength(100);
+            .HasMaxLength(ValidationConstants.GenreNameMaxLength);
     }
 }
