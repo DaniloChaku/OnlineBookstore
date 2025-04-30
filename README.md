@@ -13,7 +13,7 @@
 
 ```bash
 git clone https://github.com/DaniloChaku/OnlineBookstore.git
-cd SimpleSocialMediaAPI
+cd OnlineBookstore
 ```
 
 ### 2. Set Up Environment Variables
